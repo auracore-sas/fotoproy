@@ -1,5 +1,5 @@
-# Base de datos local de desarrollo (PostgreSQL 16 + PostGIS)
-# Uso: docker compose up -d db   |   docker compose down
+# Local development database (PostgreSQL 16 + PostGIS)
+# Usage: docker compose up -d db   |   docker compose down
 services:
   db:
     image: postgis/postgis:16-3.5

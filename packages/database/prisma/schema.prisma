@@ -1,13 +1,15 @@
-// Schema Prisma — FotoProy (fuente de verdad del modelo de datos).
+// FotoProy — Prisma schema (source of truth of the data model).
 //
-// Notas:
-// - Modelado orientado al MVP de la SPEC §5 (docs/SPEC.md). El DDL original
-//   de la SPEC es informativo: este esquema es la versión canónica.
-// - Decisión F0.4: las coordenadas se guardan como Decimal (lat/lng) en vez de
-//   GEOMETRY(Point,4326). PostGIS queda habilitado en la BD local (docker)
-//   para uso futuro (mapas en vivo, geofencing) sin necesidad de migrar tipos.
-// - Tablas en plural snake_case (@@map); columnas en camelCase (convención Prisma).
-// - Toda entidad creada en el móvil llega con su UUID v4 de cliente (idempotencia).
+// Notes:
+// - MVP-oriented modeling per SPEC §5 (docs/SPEC.md). The original DDL in the
+//   SPEC is informative: this schema is the canonical version.
+// - Decision F0.4: coordinates are stored as Decimal (lat/lng) instead of
+//   GEOMETRY(Point,4326). PostGIS stays enabled on the local DB (docker) for
+//   future use (live maps, geofencing) without needing to migrate types.
+// - Table names in plural snake_case (@@map); column names in camelCase
+//   (Prisma convention).
+// - Every entity created on the mobile app arrives with its own client-side
+//   UUID v4 (idempotency).
 
 generator client {
   provider = "prisma-client-js"
@@ -34,15 +36,15 @@ enum PlanKind {
 }
 
 // ---------------------------------------------------------------------------
-// Organizaciones / empresas (clientes B2B)
+// Organizations / companies (B2B customers)
 // ---------------------------------------------------------------------------
 
 model Organization {
-  id         String    @id @default(uuid())
-  taxId      String?   @unique // RUC / NIT / RFC (opcional en MVP)
-  legalName  String
-  tradeName  String?
-  createdAt  DateTime  @default(now())
+  id        String   @id @default(uuid())
+  taxId     String?  @unique // RUC / NIT / RFC (optional in MVP)
+  legalName String
+  tradeName String?
+  createdAt DateTime @default(now())
 
   users    User[]
   projects Project[]
@@ -51,42 +53,42 @@ model Organization {
 }
 
 // ---------------------------------------------------------------------------
-// Usuarios y roles
+// Users & roles
 // ---------------------------------------------------------------------------
 
 model User {
-  id             String   @id @default(uuid())
+  id             String        @id @default(uuid())
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  email          String   @unique
+  email          String        @unique
   passwordHash   String
   fullName       String
-  role           Role     @default(TECHNICIAN)
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
+  role           Role          @default(TECHNICIAN)
+  isActive       Boolean       @default(true)
+  createdAt      DateTime      @default(now())
 
-  photos   Photo[]
-  comments PhotoComment[]
-  createdPins PhotoPin[] @relation("PinsByUser")
+  photos       Photo[]
+  comments     PhotoComment[]
+  createdPins  PhotoPin[]      @relation("PinsByUser")
 
   @@map("users")
 }
 
 // ---------------------------------------------------------------------------
-// Proyectos / obras
+// Projects / construction sites
 // ---------------------------------------------------------------------------
 
 model Project {
-  id             String   @id @default(uuid())
+  id             String       @id @default(uuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   code           String
   name           String
   description    String?
   clientName     String?
-  latitude       Decimal? @db.Decimal(10, 7) // Ubicación central (opcional)
-  longitude      Decimal? @db.Decimal(10, 7)
-  createdAt      DateTime @default(now())
+  latitude       Decimal?     @db.Decimal(10, 7) // Center location (optional)
+  longitude      Decimal?     @db.Decimal(10, 7)
+  createdAt      DateTime     @default(now())
 
   plans  ProjectPlan[]
   photos Photo[]
@@ -97,19 +99,19 @@ model Project {
 }
 
 // ---------------------------------------------------------------------------
-// Planos / mapas del proyecto (imagen o PDF multipágina)
+// Project plans / site maps (image or multi-page PDF)
 // ---------------------------------------------------------------------------
 
 model ProjectPlan {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   projectId    String
-  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   title        String
   fileUrl      String
   thumbnailUrl String?
-  pageCount    Int      @default(1)
-  planKind     PlanKind @default(IMAGE)
-  createdAt    DateTime @default(now())
+  pageCount    Int       @default(1)
+  planKind     PlanKind  @default(IMAGE)
+  createdAt    DateTime  @default(now())
 
   pins PhotoPin[]
 
@@ -118,23 +120,23 @@ model ProjectPlan {
 }
 
 // ---------------------------------------------------------------------------
-// Fotografías
+// Photos
 // ---------------------------------------------------------------------------
 
 model Photo {
-  id             String    @id
-  projectId      String
-  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  userId         String?
-  user           User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  imageUrl       String
-  thumbnailUrl   String?
-  latitude       Decimal?  @db.Decimal(10, 7) // GPS del dispositivo (opcional)
-  longitude      Decimal?  @db.Decimal(10, 7)
-  altitude       Decimal?  @db.Decimal(8, 2)
-  notes          String?
-  capturedAt     DateTime // sello del cliente (puede ir desfasado offline)
-  syncedAt       DateTime  @default(now()) // sello del servidor
+  id           String   @id
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  imageUrl     String
+  thumbnailUrl String?
+  latitude     Decimal? @db.Decimal(10, 7) // Device GPS (optional)
+  longitude    Decimal? @db.Decimal(10, 7)
+  altitude     Decimal? @db.Decimal(8, 2)
+  notes        String?
+  capturedAt   DateTime // Client timestamp (may drift while offline)
+  syncedAt     DateTime @default(now()) // Server timestamp
 
   pins     PhotoPin[]
   comments PhotoComment[]
@@ -145,21 +147,21 @@ model Photo {
 }
 
 // ---------------------------------------------------------------------------
-// Pines: foto anclada sobre un plano (posición relativa por página)
+// Pins: photo anchored over a plan (relative position per page)
 // ---------------------------------------------------------------------------
 
 model PhotoPin {
-  id          String   @id
+  id          String       @id
   planId      String
-  plan        ProjectPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  plan        ProjectPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
   photoId     String
-  photo       Photo    @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  photo       Photo        @relation(fields: [photoId], references: [id], onDelete: Cascade)
   createdById String?
-  createdBy   User?    @relation("PinsByUser", fields: [createdById], references: [id], onDelete: SetNull)
-  pageNumber  Int      @default(1)
-  xPercentage Decimal  @db.Decimal(5, 2) // 0.00 – 100.00
-  yPercentage Decimal  @db.Decimal(5, 2)
-  createdAt   DateTime @default(now())
+  createdBy   User?        @relation("PinsByUser", fields: [createdById], references: [id], onDelete: SetNull)
+  pageNumber  Int          @default(1)
+  xPercentage Decimal      @db.Decimal(5, 2) // 0.00 – 100.00
+  yPercentage Decimal      @db.Decimal(5, 2)
+  createdAt   DateTime     @default(now())
 
   @@index([planId])
   @@index([photoId])
@@ -167,7 +169,7 @@ model PhotoPin {
 }
 
 // ---------------------------------------------------------------------------
-// Comentarios en fotos
+// Photo comments
 // ---------------------------------------------------------------------------
 
 model PhotoComment {

@@ -32,6 +32,7 @@
 - **Regla de oro:** toda entidad creada en el móvil nace con **UUID v4 de cliente**; nunca se edita (append-only).
 - Fechas en **ISO 8601 UTC**; la UI muestra hora local. `captured_at` lo genera el cliente (puede ir desfasado offline) y el servidor sella su propio `created_at`/`synced_at`.
 - Validaciones de entrada con **zod** en `@fotoproy/shared`, reutilizadas por API y app.
+- **Idioma (regla de codificación):** todo el código, comentarios, logs, mensajes de la API, esquema de BD (tablas/columnas/enums) y la estructura de carpetas/archivos en **inglés**. La documentación de `docs/` y los textos visibles de la UI (español, público LATAM) se manejan en capas separadas (i18n en F1+).
 - En la API: todo query filtra por `organization_id` (org-scoping) — es requisito de seguridad, no opcional.
 - Secretos solo en variables de entorno (`.env`, nunca en git).
 
@@ -175,6 +176,7 @@ Orden sugerido (P0 = primero cuando se valide en campo):
 
 ## Registro de cambios
 
+- **v1.2 (2026-09-02):** regla de codificación aplicada: código, comentarios, logs, mensajes de API, schema Prisma (comentarios) y descripciones de paquetes en inglés (identificadores y nombres de tablas ya lo estaban). La documentación (`docs/`, ROADMAP) y el copy de UI quedan en español/capa i18n.
 - **v1.1 (2026-09-02):** Fase 0 completada (hito M0). Notas técnicas del stack efectivo:
   - **TypeScript 6.0.3** en todo el monorepo: TS 7.0.2 elimina `moduleResolution: node10` y el CLI de Nest exige la API de compilador que recién vuelve en 7.1.
   - **Resolución `module: node16`** en la base (CJS para `packages/*`, **ESM para `apps/api`** — NestJS 12 es ESM, requiere `"type": "module"` + extensiones `.js` en imports relativos).

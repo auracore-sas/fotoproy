@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "API REST de FotoProy (NestJS + Prisma + PostgreSQL)",
+  "description": "FotoProy REST API (NestJS + Prisma + PostgreSQL)",
   "scripts": {
     "dev": "nest start --watch",
     "build": "nest build",

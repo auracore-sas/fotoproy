@@ -2,7 +2,7 @@
   "name": "fotoproy",
   "version": "0.1.0",
   "private": true,
-  "description": "FotoProy — documentación fotográfica de proyectos de construcción (offline-first, móvil iOS + Android)",
+  "description": "FotoProy — construction project photo documentation (offline-first, mobile iOS + Android)",
   "packageManager": "pnpm@11.24.0",
   "engines": {
     "node": ">=22"

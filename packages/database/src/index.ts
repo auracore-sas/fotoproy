@@ -1,8 +1,8 @@
 /**
- * @fotoproy/database — re-exporta el cliente Prisma generado.
+ * @fotoproy/database — re-exports the generated Prisma client.
  *
- * La API (apps/api) debe consumir SIEMPRE este paquete (nunca @prisma/client
- * directo) para que exista una única fuente del cliente y sus tipos.
+ * The API (apps/api) must ALWAYS consume this package (never @prisma/client
+ * directly) so there is a single source for the client and its types.
  */
 export * from '@prisma/client';
 export { PrismaClient } from '@prisma/client';

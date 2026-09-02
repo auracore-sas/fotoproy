@@ -2,7 +2,7 @@
   "name": "@fotoproy/database",
   "version": "0.1.0",
   "private": true,
-  "description": "Esquema Prisma (fuente de verdad del modelo de datos) + cliente generado",
+  "description": "Prisma schema (source of truth of the data model) + generated client",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
