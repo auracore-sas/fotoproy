@@ -67,6 +67,7 @@ fotoproy/
 │  └─ archive/           # Versiones anteriores de la especificación
 ├─ docker-compose.yml    # Postgres 16 + PostGIS local (puerto 55432)
 ├─ ROADMAP.md            # Plan de implementación completo
+├─ AGENTS.md             # Reglas y flujos para agentes de código
 └─ README.md             # Este archivo
 ```
 
@@ -78,6 +79,7 @@ fotoproy/
 | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
 | [docs/SPEC.md](docs/SPEC.md)   | Especificación técnica y de producto **v2.1**: visión, alcance del MVP, stack, arquitectura, modelo de datos y decisiones cerradas. |
 | [ROADMAP.md](ROADMAP.md)       | Plan de implementación: fases F0–F4 con tareas, criterios de terminado, hitos, riesgos y backlog post-MVP.                          |
+| [AGENTS.md](AGENTS.md)         | Reglas y flujos de trabajo para agentes de código: idiomas, convenciones, comandos y trampas.                                       |
 | [docs/archive/](docs/archive/) | Historial de versiones (SPEC v1.0 original, foco eléctrico LATAM).                                                                  |
 
 ---
