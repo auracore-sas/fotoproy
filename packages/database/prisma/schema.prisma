@@ -1,0 +1,184 @@
+// Schema Prisma — FotoProy (fuente de verdad del modelo de datos).
+//
+// Notas:
+// - Modelado orientado al MVP de la SPEC §5 (docs/SPEC.md). El DDL original
+//   de la SPEC es informativo: este esquema es la versión canónica.
+// - Decisión F0.4: las coordenadas se guardan como Decimal (lat/lng) en vez de
+//   GEOMETRY(Point,4326). PostGIS queda habilitado en la BD local (docker)
+//   para uso futuro (mapas en vivo, geofencing) sin necesidad de migrar tipos.
+// - Tablas en plural snake_case (@@map); columnas en camelCase (convención Prisma).
+// - Toda entidad creada en el móvil llega con su UUID v4 de cliente (idempotencia).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  SUPERVISOR
+  TECHNICIAN
+}
+
+enum PlanKind {
+  IMAGE
+  PDF
+}
+
+// ---------------------------------------------------------------------------
+// Organizaciones / empresas (clientes B2B)
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id         String    @id @default(uuid())
+  taxId      String?   @unique // RUC / NIT / RFC (opcional en MVP)
+  legalName  String
+  tradeName  String?
+  createdAt  DateTime  @default(now())
+
+  users    User[]
+  projects Project[]
+
+  @@map("organizations")
+}
+
+// ---------------------------------------------------------------------------
+// Usuarios y roles
+// ---------------------------------------------------------------------------
+
+model User {
+  id             String   @id @default(uuid())
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String   @unique
+  passwordHash   String
+  fullName       String
+  role           Role     @default(TECHNICIAN)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  photos   Photo[]
+  comments PhotoComment[]
+  createdPins PhotoPin[] @relation("PinsByUser")
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Proyectos / obras
+// ---------------------------------------------------------------------------
+
+model Project {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  code           String
+  name           String
+  description    String?
+  clientName     String?
+  latitude       Decimal? @db.Decimal(10, 7) // Ubicación central (opcional)
+  longitude      Decimal? @db.Decimal(10, 7)
+  createdAt      DateTime @default(now())
+
+  plans  ProjectPlan[]
+  photos Photo[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("projects")
+}
+
+// ---------------------------------------------------------------------------
+// Planos / mapas del proyecto (imagen o PDF multipágina)
+// ---------------------------------------------------------------------------
+
+model ProjectPlan {
+  id           String   @id @default(uuid())
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title        String
+  fileUrl      String
+  thumbnailUrl String?
+  pageCount    Int      @default(1)
+  planKind     PlanKind @default(IMAGE)
+  createdAt    DateTime @default(now())
+
+  pins PhotoPin[]
+
+  @@index([projectId])
+  @@map("project_plans")
+}
+
+// ---------------------------------------------------------------------------
+// Fotografías
+// ---------------------------------------------------------------------------
+
+model Photo {
+  id             String    @id
+  projectId      String
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  imageUrl       String
+  thumbnailUrl   String?
+  latitude       Decimal?  @db.Decimal(10, 7) // GPS del dispositivo (opcional)
+  longitude      Decimal?  @db.Decimal(10, 7)
+  altitude       Decimal?  @db.Decimal(8, 2)
+  notes          String?
+  capturedAt     DateTime // sello del cliente (puede ir desfasado offline)
+  syncedAt       DateTime  @default(now()) // sello del servidor
+
+  pins     PhotoPin[]
+  comments PhotoComment[]
+
+  @@index([projectId, capturedAt])
+  @@index([userId])
+  @@map("photos")
+}
+
+// ---------------------------------------------------------------------------
+// Pines: foto anclada sobre un plano (posición relativa por página)
+// ---------------------------------------------------------------------------
+
+model PhotoPin {
+  id          String   @id
+  planId      String
+  plan        ProjectPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  photoId     String
+  photo       Photo    @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  createdById String?
+  createdBy   User?    @relation("PinsByUser", fields: [createdById], references: [id], onDelete: SetNull)
+  pageNumber  Int      @default(1)
+  xPercentage Decimal  @db.Decimal(5, 2) // 0.00 – 100.00
+  yPercentage Decimal  @db.Decimal(5, 2)
+  createdAt   DateTime @default(now())
+
+  @@index([planId])
+  @@index([photoId])
+  @@map("photo_pins")
+}
+
+// ---------------------------------------------------------------------------
+// Comentarios en fotos
+// ---------------------------------------------------------------------------
+
+model PhotoComment {
+  id        String   @id
+  photoId   String
+  photo     Photo    @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([photoId, createdAt])
+  @@map("photo_comments")
+}

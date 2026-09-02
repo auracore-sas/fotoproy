@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Builds
+dist/
+build/
+*.tsbuildinfo
+
+# Env / secrets (keep .env.example committed)
+.env
+.env.*
+!.env.example
+
+# Expo / React Native
+.expo/
+.expo-shared/
+web-build/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Tests / coverage
+coverage/
+
+# Prisma
+packages/database/prisma/*.db

@@ -1,0 +1,23 @@
+# Base de datos local de desarrollo (PostgreSQL 16 + PostGIS)
+# Uso: docker compose up -d db   |   docker compose down
+services:
+  db:
+    image: postgis/postgis:16-3.5
+    container_name: fotoproy-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fotoproy
+      POSTGRES_PASSWORD: fotoproy
+      POSTGRES_DB: fotoproy
+    ports:
+      - '55432:5432'
+    volumes:
+      - fotoproy_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U fotoproy -d fotoproy']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  fotoproy_pgdata:
