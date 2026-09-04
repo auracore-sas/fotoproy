@@ -2,16 +2,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  Linking,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, Button } from '../../components/ui';
 import { api } from '../../lib/api';
 import { errorMessage, useAuth } from '../../lib/auth';
@@ -28,11 +19,6 @@ interface GeoState {
 }
 
 type FlashMode = 'off' | 'auto' | 'on';
-
-interface Shot {
-  uri: string;
-  capturedAt: string; // ISO UTC
-}
 
 function formatClock(date: Date): string {
   return date.toLocaleString('es-EC', {
@@ -58,7 +44,8 @@ export default function CaptureScreen() {
 
   const [project, setProject] = useState<Project | null>(null);
   const [flash, setFlash] = useState<FlashMode>('off');
-  const [zoom, setZoom] = useState(0); // 0..1 mapped to device zoom range
+  const [muted, setMuted] = useState(false); // shutter sound toggle (iOS)
+  const [zoom, setZoom] = useState(0); // 0..1 mapped to the device zoom range
   const [now, setNow] = useState(new Date());
   const [geo, setGeo] = useState<GeoState>({
     status: 'idle',
@@ -66,9 +53,13 @@ export default function CaptureScreen() {
     longitude: null,
     altitude: null,
   });
-  const [shot, setShot] = useState<Shot | null>(null);
   const [taking, setTaking] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const busyRef = useRef(false);
+
+  // Session counters for light feedback while burst-capturing.
+  const [savedCount, setSavedCount] = useState(0);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Live clock for the overlay stamp.
   useEffect(() => {
@@ -97,7 +88,7 @@ export default function CaptureScreen() {
     };
   }, [token, projectId]);
 
-  // Location permission + first GPS fix.
+  // Location permission + first GPS fix (optional, never blocks capture).
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -149,59 +140,69 @@ export default function CaptureScreen() {
     }
   };
 
-  const takePhoto = async () => {
-    if (!cameraRef.current || taking) {
-      return;
+  const showToast = (message: string) => {
+    setToast(message);
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
     }
-    setTaking(true);
-    try {
-      // Capture immediately — the GPS keeps refreshing in the background, so
-      // the shutter feels instant and the freshest fix is used when saving.
-      const result = await cameraRef.current.takePictureAsync({ quality: 0.7 });
-      setShot({ uri: result.uri, capturedAt: new Date().toISOString() });
-      void refreshGps();
-    } catch {
-      Alert.alert('Error', 'No se pudo capturar la foto. Intenta de nuevo.');
-    } finally {
-      setTaking(false);
-    }
+    toastTimerRef.current = setTimeout(() => setToast(null), 1400);
   };
 
-  const saveShot = async () => {
-    if (!shot || !projectId || !user || saving) {
-      return;
-    }
-    setSaving(true);
+  /** Persists the shot locally and enqueues the sync item (no confirmation). */
+  const storePhoto = async (sourceUri: string, capturedAt: string): Promise<void> => {
     try {
       const photoId = generateId();
-      const localUri = await persistCapturedPhoto(shot.uri, photoId);
+      const localUri = await persistCapturedPhoto(sourceUri, photoId);
       await createLocalPhoto({
         id: photoId,
         projectId,
-        userId: user.id,
+        userId: user?.id ?? null,
         localUri,
         latitude: geo.latitude,
         longitude: geo.longitude,
         altitude: geo.altitude,
-        capturedAt: shot.capturedAt,
+        capturedAt,
       });
-      // Queue the photo for sync (F2 adds the R2 upload step).
+      // Queue for sync (F2 adds the R2 upload step).
       await enqueueSync('photo', photoId, {
         id: photoId,
         projectId,
-        capturedAt: shot.capturedAt,
+        capturedAt,
         latitude: geo.latitude,
         longitude: geo.longitude,
         altitude: geo.altitude,
       });
-      Alert.alert(
-        'Foto guardada',
-        'Se guardó en el dispositivo y quedó en cola para sincronizar.',
-        [{ text: 'OK', onPress: () => router.back() }],
-      );
+      const count = savedCount + 1;
+      setSavedCount(count);
+      showToast(`✓ Foto guardada${count > 1 ? ` (${count})` : ''}`);
     } catch (error) {
       Alert.alert('Error al guardar', errorMessage(error));
-      setSaving(false);
+    }
+  };
+
+  /**
+   * Burst capture: shoots instantly, saves without asking and keeps the
+   * camera active so the user can take the next photo right away.
+   */
+  const takePhoto = async () => {
+    if (!cameraRef.current || busyRef.current) {
+      return;
+    }
+    busyRef.current = true;
+    setTaking(true);
+    try {
+      // GPS refreshes in the background: never block the shutter on it.
+      const result = await cameraRef.current.takePictureAsync({
+        quality: 0.7,
+        shutterSound: !muted, // iOS honors this; Android follows the system volume
+      });
+      void refreshGps();
+      await storePhoto(result.uri, new Date().toISOString());
+    } catch {
+      Alert.alert('Error', 'No se pudo capturar la foto. Intenta de nuevo.');
+    } finally {
+      setTaking(false);
+      busyRef.current = false;
     }
   };
 
@@ -213,41 +214,6 @@ export default function CaptureScreen() {
         (geo.altitude != null ? ` · ${Math.round(geo.altitude)} m` : '')
       : '📍 GPS no disponible';
   const stampLines = [`🏗️ ${projectLine}`, `👤 ${user?.fullName ?? ''}`, gpsLine];
-
-  // Preview after capture.
-  if (shot) {
-    return (
-      <View style={styles.previewContainer}>
-        <Image source={{ uri: shot.uri }} style={StyleSheet.absoluteFill} resizeMode="contain" />
-        <View style={styles.previewStamp}>
-          <Text style={styles.stampTitle}>📷 Foto capturada</Text>
-          <Text style={styles.stampLine}>{formatClock(new Date(shot.capturedAt))}</Text>
-          {stampLines.map((line, i) => (
-            <Text key={i} style={styles.stampLine}>
-              {line}
-            </Text>
-          ))}
-        </View>
-        <View style={styles.previewActions}>
-          <View style={styles.previewActionItem}>
-            <Button
-              title="Descartar"
-              variant="secondary"
-              onPress={() => setShot(null)}
-              disabled={saving}
-            />
-          </View>
-          <View style={styles.previewActionItem}>
-            <Button
-              title={saving ? 'Guardando…' : 'Guardar foto'}
-              onPress={saveShot}
-              loading={saving}
-            />
-          </View>
-        </View>
-      </View>
-    );
-  }
 
   // Camera permission loading.
   if (!permission) {
@@ -296,20 +262,31 @@ export default function CaptureScreen() {
           onPress={() => router.back()}
           style={styles.iconButton}
           accessibilityRole="button"
+          accessibilityLabel="Cerrar cámara"
         >
           <Text style={styles.iconText}>✕</Text>
         </Pressable>
         <Text style={styles.topTitle}>{project ? project.code : 'Captura'}</Text>
-        <Pressable
-          onPress={() => setFlash((f) => (f === 'off' ? 'auto' : f === 'auto' ? 'on' : 'off'))}
-          style={[styles.iconButton, styles.flashButton]}
-          accessibilityRole="button"
-          accessibilityLabel="Alternar flash"
-        >
-          <Text style={[styles.iconText, styles.flashLabel]}>
-            {flash === 'off' ? '⚡OFF' : flash === 'auto' ? '⚡AUTO' : '⚡ON'}
-          </Text>
-        </Pressable>
+        <View style={styles.topRight}>
+          <Pressable
+            onPress={() => setMuted((m) => !m)}
+            style={styles.iconButton}
+            accessibilityRole="button"
+            accessibilityLabel="Alternar sonido del obturador"
+          >
+            <Text style={styles.iconText}>{muted ? '🔇' : '🔊'}</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setFlash((f) => (f === 'off' ? 'auto' : f === 'auto' ? 'on' : 'off'))}
+            style={[styles.iconButton, styles.flashButton]}
+            accessibilityRole="button"
+            accessibilityLabel="Alternar flash"
+          >
+            <Text style={[styles.iconText, styles.flashLabel]}>
+              {flash === 'off' ? '⚡OFF' : flash === 'auto' ? '⚡AUTO' : '⚡ON'}
+            </Text>
+          </Pressable>
+        </View>
       </View>
 
       {/* Live stamp overlay */}
@@ -363,6 +340,13 @@ export default function CaptureScreen() {
           )}
         </Pressable>
       </View>
+
+      {/* Saved toast */}
+      {toast ? (
+        <View style={styles.toast} pointerEvents="none">
+          <Text style={styles.toastText}>{toast}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -397,6 +381,7 @@ const styles = StyleSheet.create({
     paddingTop: 56,
     paddingBottom: 12,
   },
+  topRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   iconButton: {
     width: 40,
     height: 40,
@@ -464,22 +449,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   shutterInner: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#FFF' },
-  previewContainer: { flex: 1, backgroundColor: '#000' },
-  previewStamp: {
+  toast: {
     position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 130,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 12,
-    padding: 12,
+    bottom: 132,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(22,163,74,0.92)',
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
-  previewActions: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 40,
-    flexDirection: 'row',
-  },
-  previewActionItem: { flex: 1, marginHorizontal: 6 },
+  toastText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
 });

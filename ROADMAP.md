@@ -180,6 +180,7 @@ Orden sugerido (P0 = primero cuando se valide en campo):
 
 ## Registro de cambios
 
+- **v1.8 (2026-09-03):** flujo de cámara en **modo ráfaga** según feedback: disparo → guardado automático local-first (sin confirmación ni navegación) → la cámara sigue activa para más fotos, con toast "✓ Foto guardada (N)". Sonido del obturador **parametrizable** (botón 🔊/🔇; iOS lo respeta, Android sigue el volumen del sistema). Confirmado: el GPS es opcional y nunca bloquea la captura.
 - **v1.7 (2026-09-03):** mejoras cámara según pruebas del usuario: captura instantánea (el GPS ya no bloquea el disparo; refresco en segundo plano + calidad 0.7) y controles básicos de **zoom** y **flash OFF/AUTO/ON**.
 - **v1.6 (2026-09-03):** F1.7–F1.9 parcial completadas — cámara con estampa en vivo (expo-camera + expo-location + expo-file-system), captura local-first que persiste en SQLite y encola sync. Botón "Tomar foto" en el detalle del proyecto. Plugins de permisos con textos en español en `app.json`.
 - **v1.5 (2026-09-03):** F1.6 completada — BD local SQLite (expo-sqlite + drizzle-orm 0.45) con espejo de entidades, cola `sync_queue` y migraciones versionadas (`PRAGMA user_version`, SQL por versión en `lib/db/migrations.ts`; append-only: nunca editar migraciones aplicadas). Añadidos `expo-crypto` (UUID cliente) y helper `lib/id.ts`.
