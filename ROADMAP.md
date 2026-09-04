@@ -65,11 +65,11 @@
 
 ### Móvil (Expo)
 
-> ✅ **F1.4–F1.5 completado (2026-09-03)**: `apps/mobile` con Expo SDK 57 + expo-router; sesión en `expo-secure-store`; cliente HTTP con `EXPO_PUBLIC_API_URL` (`.env`); pantallas login/registro, lista de proyectos, detalle y nuevo proyecto (UI en español). Validado: typecheck 0 y `expo export` compila el bundle Android. _Nota: la app usa tipos locales espejo de `@fotoproy/shared`; el consumo directo del paquete shared desde Metro se formalizará después (F2)._
+> ✅ **F1.4–F1.6 completado (2026-09-03)**: `apps/mobile` con Expo SDK 57 + expo-router; sesión en `expo-secure-store`; cliente HTTP con `EXPO_PUBLIC_API_URL` (`.env`); pantallas login/registro, lista de proyectos, detalle y nuevo proyecto (UI en español); **BD local SQLite (expo-sqlite + drizzle-orm) con espejo de entidades + `sync_queue`**. Validado: typecheck 0 y `expo export` compila el bundle Android. _Nota: la app usa tipos locales espejo de `@fotoproy/shared`; el consumo directo del paquete shared desde Metro se formalizará después (F2)._
 
 - [x] **F1.4** Base app: Expo SDK 57 + TypeScript + expo-router (grupos `(auth)`/`(app)` con guards por sesión); navegación Login/Registro → Lista proyectos → Detalle (→ cámara/galería en F1.7+).
 - [x] **F1.5** Sesión: token + usuario en `expo-secure-store` (`lib/auth.tsx`); cliente HTTP (`lib/api.ts`) con base URL por env; estado global por contexto; pantallas login/registro con errores legibles; logout.
-- [ ] **F1.6** **BD local**: `expo-sqlite` + Drizzle — esquema espejo (photos, pins, comments, plans, users/proyectos en caché) + `sync_queue` (SPEC §5). Módulo de migraciones locales (versión de esquema al actualizar la app).
+- [x] **F1.6** **BD local** (`expo-sqlite` + `drizzle-orm`): `lib/db/schema.ts` (tablas espejo photos/photo_pins/photo_comments/project_plans/cached_projects + `sync_queue`), migraciones versionadas por `PRAGMA user_version` (`lib/db/migrations.ts`, v1) y repos (`lib/db/repos.ts`: photos local-first, enqueue/list/update `sync_queue`, contador pendientes). Inicialización en `app/_layout.tsx`.
 - [ ] **F1.7** **Cámara** (`expo-camera`): preview a pantalla completa, **enfoque al tocar**, flash on/off/auto; permisos gestionados con buen estado "denegado".
 - [ ] **F1.8** **GPS/estampa**: `expo-location` (permiso opcional — si se niega, la foto se toma sin GPS, no bloquear). Capturar lat/lng/altitud al disparar. Overlay en vivo: fecha/hora, proyecto, usuario, coords si existen. _(No quemar la estampa en la imagen en MVP; es metadato + overlay. Revisar con producto.)_
 - [ ] **F1.9** **Flujo de captura local-first**: elegir proyecto → disparar → guardar en SQLite **siempre** (UUID cliente + archivo WebP/JPEG local) → generar thumbnail local → aparecer en galería local aunque no haya red.
@@ -180,6 +180,7 @@ Orden sugerido (P0 = primero cuando se valide en campo):
 
 ## Registro de cambios
 
+- **v1.5 (2026-09-03):** F1.6 completada — BD local SQLite (expo-sqlite + drizzle-orm 0.45) con espejo de entidades, cola `sync_queue` y migraciones versionadas (`PRAGMA user_version`, SQL por versión en `lib/db/migrations.ts`; append-only: nunca editar migraciones aplicadas). Añadidos `expo-crypto` (UUID cliente) y helper `lib/id.ts`.
 - **v1.4 (2026-09-03):** base móvil F1.4–F1.5: `apps/mobile` (Expo SDK 57 + expo-router) con sesión persistente (`expo-secure-store`), cliente HTTP (`EXPO_PUBLIC_API_URL`), pantallas login/registro/lista-proyectos/detalle/nuevo-proyecto. Pendiente F1.6 (SQLite+Drizzle+sync_queue) y F1.7+ (cámara/GPS).
 - **v1.3 (2026-09-03):** Fase 1 backend completada (F1.1–F1.3): módulos `auth`, `users` y `projects`. Infra común nueva: guards globales `JwtAuthGuard`/`RolesGuard`, decoradores `@Public`/`@Roles`/`@CurrentUser`, `ZodValidationPipe` (valida con schemas de `@fotoproy/shared`). Envs: `JWT_SECRET`, `JWT_EXPIRES_IN`. Verificado por curl (401/403/404/400/409).
 - **v1.2 (2026-09-02):** regla de codificación aplicada: código, comentarios, logs, mensajes de API, schema Prisma (comentarios) y descripciones de paquetes en inglés (identificadores y nombres de tablas ya lo estaban). La documentación (`docs/`, ROADMAP) y el copy de UI quedan en español/capa i18n.
