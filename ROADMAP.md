@@ -180,6 +180,7 @@ Orden sugerido (P0 = primero cuando se valide en campo):
 
 ## Registro de cambios
 
+- **v1.10 (2026-09-04):** ✅ pruebas en dispositivo Android: fotos en ráfaga, zoom por pellizco, linterna, relación de aspecto y **video con audio** funcionando (requiere permiso de micrófono; si se niega, graba sin audio).
 - **v1.9 (2026-09-03):** **video en el MVP** (decisión SPEC v2.2 #7) + controles de cámara: linterna 🔦 (`enableTorch`), relación de aspecto 4:3/16:9/1:1 y **modo 🎥 Video** (grabar/parar, límite 3 min, timer REC, guardado automático local-first). Modelo: `MediaKind PHOTO/VIDEO` + `durationMs` en shared, schema Prisma (migración `add_media_kind`) y BD local (migración v2).
 - **v1.8 (2026-09-03):** flujo de cámara en **modo ráfaga** según feedback: disparo → guardado automático local-first (sin confirmación ni navegación) → la cámara sigue activa para más fotos, con toast "✓ Foto guardada (N)". Sonido del obturador **parametrizable** (botón 🔊/🔇; iOS lo respeta, Android sigue el volumen del sistema). Confirmado: el GPS es opcional y nunca bloquea la captura.
 - **v1.7 (2026-09-03):** mejoras cámara según pruebas del usuario: captura instantánea (el GPS ya no bloquea el disparo; refresco en segundo plano + calidad 0.7) y controles básicos de **zoom** y **flash OFF/AUTO/ON**.
