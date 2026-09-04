@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { CenterLoader, colors, ErrorBanner, Screen, textStyles } from '../../../components/ui';
 import { api } from '../../../lib/api';
 import { errorMessage, useAuth } from '../../../lib/auth';
+import { listLocalPhotos } from '../../../lib/db';
 import type { Project } from '../../../lib/types';
 
 export default function ProjectDetailScreen() {
@@ -13,6 +14,7 @@ export default function ProjectDetailScreen() {
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [mediaCount, setMediaCount] = useState(0);
 
   const load = useCallback(async () => {
     if (!token || !id) {
@@ -33,6 +35,16 @@ export default function ProjectDetailScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Count locally captured media (photos + videos) for the project.
+  useEffect(() => {
+    if (!id) {
+      return;
+    }
+    listLocalPhotos(id)
+      .then((rows) => setMediaCount(rows.length))
+      .catch(() => undefined);
+  }, [id]);
 
   const location =
     project?.latitude != null && project.longitude != null
@@ -63,10 +75,10 @@ export default function ProjectDetailScreen() {
           </View>
 
           <View style={styles.comingSoon}>
-            <Text style={styles.comingSoonTitle}>📷 Documentación fotográfica</Text>
+            <Text style={styles.comingSoonTitle}>🎬 Fotos y videos de obra</Text>
             <Text style={styles.comingSoonText}>
-              Captura fotos con estampa (fecha, proyecto, usuario y GPS) y déjalas guardadas en el
-              dispositivo. La galería y el anclaje sobre planos llegan en las próximas fases.
+              Toma fotos con estampa o videos cortos: se guardan al instante en el dispositivo. El
+              anclaje sobre planos llega en las siguientes fases.
             </Text>
           </View>
 
@@ -77,8 +89,24 @@ export default function ProjectDetailScreen() {
           >
             <Text style={styles.captureButtonIcon}>📷</Text>
             <View style={styles.captureButtonText}>
-              <Text style={styles.captureButtonTitle}>Tomar foto</Text>
+              <Text style={styles.captureButtonTitle}>Tomar foto / video</Text>
               <Text style={styles.captureButtonSubtitle}>Documenta el avance de la obra</Text>
+            </View>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push({ pathname: '/gallery', params: { projectId: id } })}
+            style={({ pressed }) => [styles.galleryButton, pressed && { opacity: 0.85 }]}
+          >
+            <Text style={styles.galleryButtonIcon}>🖼️</Text>
+            <View style={styles.captureButtonText}>
+              <Text style={styles.galleryButtonTitle}>
+                Galería local · {mediaCount} {mediaCount === 1 ? 'medio' : 'medios'}
+              </Text>
+              <Text style={styles.galleryButtonSubtitle}>
+                Fotos y videos guardados en este equipo
+              </Text>
             </View>
           </Pressable>
         </ScrollView>
@@ -143,4 +171,17 @@ const styles = StyleSheet.create({
   captureButtonText: { flex: 1 },
   captureButtonTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
   captureButtonSubtitle: { color: '#DBEAFE', fontSize: 13, marginTop: 2 },
+  galleryButton: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  galleryButtonIcon: { fontSize: 24, marginRight: 12 },
+  galleryButtonTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  galleryButtonSubtitle: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
 });

@@ -10,11 +10,11 @@ FotoProy es una plataforma móvil (iOS + Android) para **capturar, almacenar, or
 
 ## Estado del proyecto
 
-| Estado            | Detalle                                                                                          |
-| ----------------- | ------------------------------------------------------------------------------------------------ |
-| 📋 Especificación | ✅ **v2.1** — decisiones de producto y stack cerradas ([docs/SPEC.md](docs/SPEC.md))             |
-| 🗺️ Planificación  | ✅ **ROADMAP creado** — 5 fases (F0–F4) hasta el MVP ([ROADMAP.md](ROADMAP.md))                  |
-| 💻 Código         | ✅ **Fase 0 completada** — monorepo funcional: API `/health` responde con DB · siguiente: Fase 1 |
+| Estado            | Detalle                                                                                                        |
+| ----------------- | -------------------------------------------------------------------------------------------------------------- |
+| 📋 Especificación | ✅ **v2.1** — decisiones de producto y stack cerradas ([docs/SPEC.md](docs/SPEC.md))                           |
+| 🗺️ Planificación  | ✅ **ROADMAP creado** — 5 fases (F0–F4) hasta el MVP ([ROADMAP.md](ROADMAP.md))                                |
+| 💻 Código         | ✅ **Fase 1 completada (M1)** — API auth/proyectos + app móvil con captura y galería local · siguiente: Fase 2 |
 
 > [!NOTE]
 > Proyecto en desarrollo — la Fase 0 (fundación del monorepo) está lista. El estado por fases vive en el [ROADMAP](ROADMAP.md).

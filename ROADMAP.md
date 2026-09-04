@@ -55,7 +55,7 @@
 
 **DoD global F1 = M1.**
 
-> ✅ **Backend F1.1–F1.3 completado (2026-09-03)** — verificado por curl: register→org+ADMIN, login, me, roles, miembros, CRUD projects con org-scoping, 401/403/404/400/409 según caso. Pendiente: **móvil F1.4–F1.10** (M1).
+> ✅ **Fase 1 COMPLETA — hito M1 logrado (2026-09-04)**: backend (auth/roles/miembros/projects) verificado por curl; móvil probado en dispositivo (captura ráfaga, estampa GPS, zoom pinch, linterna, aspecto, video con audio, galería local). Pendiente: **Fase 2** (R2 + sync engine).
 
 ### Backend (API)
 
@@ -73,7 +73,7 @@
 - [x] **F1.7** **Cámara** (`expo-camera`): `app/(app)/capture.tsx` — preview pantalla completa, **flash 3 modos (OFF/AUTO/ON)**, **zoom por pellizco (pinch 2 dedos, PanResponder) + botones ＋/－**, permisos con estado denegado + abrir ajustes; **modo ráfaga** (guardado automático, cámara activa, toast por foto); sonido de obturador 🔊/🔇. (Enfoque al tocar: pendiente de soporte de la API de expo-camera.)
 - [ ] **F1.8** **GPS/estampa**: `expo-location` (permiso opcional — si se niega, la foto se toma sin GPS, no bloquear). Capturar lat/lng/altitud al disparar. Overlay en vivo: fecha/hora, proyecto, usuario, coords si existen. _(No quemar la estampa en la imagen en MVP; es metadato + overlay. Revisar con producto.)_
 - [x] **F1.9 (parcial)** **Captura local-first**: disparar → UUID cliente → archivo copiado a `documentDirectory/fotoproy/` (`lib/media.ts`) → `createLocalPhoto` en SQLite **siempre** → `enqueueSync('photo', …)` en cola. Pendiente: thumbnails locales y galería (F1.10).
-- [ ] **F1.10** Galería local básica (grid) + detalle de foto con metadatos.
+- [x] **F1.10** **Galería local** (`app/(app)/gallery.tsx` + `media-viewer.tsx`): cuadrícula de fotos y videos del proyecto desde SQLite (se refresca al enfocar), thumbnails de video con `expo-video-thumbnails`, badge ▶ + duración; visor a pantalla completa con reproductor `expo-video` (controles nativos) y metadatos (fecha, GPS, duración). Acceso desde el detalle del proyecto con contador de medios locales.
 
 ---
 
@@ -180,6 +180,7 @@ Orden sugerido (P0 = primero cuando se valide en campo):
 
 ## Registro de cambios
 
+- **v1.11 (2026-09-04):** F1.10 completada — galería local con fotos+videos, thumbnails de video (expo-video-thumbnails), visor fullscreen con expo-video y metadatos. **M1 logrado: foto con estampa visible en galería local.**
 - **v1.10 (2026-09-04):** ✅ pruebas en dispositivo Android: fotos en ráfaga, zoom por pellizco, linterna, relación de aspecto y **video con audio** funcionando (requiere permiso de micrófono; si se niega, graba sin audio).
 - **v1.9 (2026-09-03):** **video en el MVP** (decisión SPEC v2.2 #7) + controles de cámara: linterna 🔦 (`enableTorch`), relación de aspecto 4:3/16:9/1:1 y **modo 🎥 Video** (grabar/parar, límite 3 min, timer REC, guardado automático local-first). Modelo: `MediaKind PHOTO/VIDEO` + `durationMs` en shared, schema Prisma (migración `add_media_kind`) y BD local (migración v2).
 - **v1.8 (2026-09-03):** flujo de cámara en **modo ráfaga** según feedback: disparo → guardado automático local-first (sin confirmación ni navegación) → la cámara sigue activa para más fotos, con toast "✓ Foto guardada (N)". Sonido del obturador **parametrizable** (botón 🔊/🔇; iOS lo respeta, Android sigue el volumen del sistema). Confirmado: el GPS es opcional y nunca bloquea la captura.

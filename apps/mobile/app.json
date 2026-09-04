@@ -44,7 +44,8 @@
         {
           "locationWhenInUsePermission": "FotoProy usa tu ubicación para estampar las fotos de obra."
         }
-      ]
+      ],
+      "expo-video"
     ]
   }
 }
