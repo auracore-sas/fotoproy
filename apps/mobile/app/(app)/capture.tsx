@@ -17,8 +17,16 @@ import { api } from '../../lib/api';
 import { errorMessage, useAuth } from '../../lib/auth';
 import { createLocalPhoto, enqueueSync } from '../../lib/db';
 import { generateId } from '../../lib/id';
-import { persistCapturedPhoto } from '../../lib/media';
+import { persistCapturedMedia } from '../../lib/media';
 import type { Project } from '../../lib/types';
+
+type FlashMode = 'off' | 'auto' | 'on';
+type CaptureMode = 'photo' | 'video';
+type AspectRatio = '4:3' | '16:9' | '1:1';
+type MediaKind = 'PHOTO' | 'VIDEO';
+
+const RATIOS: AspectRatio[] = ['4:3', '16:9', '1:1'];
+const MAX_VIDEO_SECONDS = 180;
 
 interface GeoState {
   status: 'idle' | 'loading' | 'ready' | 'denied' | 'error';
@@ -26,8 +34,6 @@ interface GeoState {
   longitude: number | null;
   altitude: number | null;
 }
-
-type FlashMode = 'off' | 'auto' | 'on';
 
 function formatClock(date: Date): string {
   return date.toLocaleString('es-EC', {
@@ -60,8 +66,11 @@ export default function CaptureScreen() {
   const cameraRef = useRef<CameraView | null>(null);
 
   const [project, setProject] = useState<Project | null>(null);
+  const [mode, setMode] = useState<CaptureMode>('photo');
   const [flash, setFlash] = useState<FlashMode>('off');
+  const [torch, setTorch] = useState(false);
   const [muted, setMuted] = useState(false); // shutter sound toggle (iOS)
+  const [ratio, setRatio] = useState<AspectRatio>('4:3');
   const [zoom, setZoom] = useState(0); // 0..1 mapped to the device zoom range
   const zoomRef = useRef(0);
 
@@ -92,9 +101,8 @@ export default function CaptureScreen() {
           return;
         }
         const distance = touchDistance(touches[0], touches[1]);
-        const ratio = distance / pinchStartDistance.current;
-        // Doubling the finger gap (ratio 2) reaches max zoom from minimum.
-        applyZoom(pinchStartZoom.current + (ratio - 1));
+        const ratioGap = distance / pinchStartDistance.current;
+        applyZoom(pinchStartZoom.current + (ratioGap - 1));
       },
       onPanResponderRelease: () => {
         pinchStartDistance.current = null;
@@ -104,6 +112,7 @@ export default function CaptureScreen() {
       },
     }),
   ).current;
+
   const [now, setNow] = useState(new Date());
   const [geo, setGeo] = useState<GeoState>({
     status: 'idle',
@@ -114,7 +123,13 @@ export default function CaptureScreen() {
   const [taking, setTaking] = useState(false);
   const busyRef = useRef(false);
 
-  // Session counters for light feedback while burst-capturing.
+  // Recording state (video mode).
+  const [recording, setRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const recordPromiseRef = useRef<Promise<{ uri: string } | undefined> | null>(null);
+  const startedAtRef = useRef(0);
+
+  // Session counters for light feedback while capturing.
   const [savedCount, setSavedCount] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -124,6 +139,17 @@ export default function CaptureScreen() {
     const interval = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Recording timer.
+  useEffect(() => {
+    if (!recording) {
+      return;
+    }
+    const interval = setInterval(() => {
+      setRecordSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000));
+    }, 500);
+    return () => clearInterval(interval);
+  }, [recording]);
 
   // Load project info for the stamp.
   useEffect(() => {
@@ -206,25 +232,34 @@ export default function CaptureScreen() {
     toastTimerRef.current = setTimeout(() => setToast(null), 1400);
   };
 
-  /** Persists the shot locally and enqueues the sync item (no confirmation). */
-  const storePhoto = async (sourceUri: string, capturedAt: string): Promise<void> => {
+  /** Persists a media item (photo/video) locally and enqueues sync. */
+  const storeMedia = async (
+    kind: MediaKind,
+    sourceUri: string,
+    capturedAt: string,
+    durationMs?: number,
+  ): Promise<void> => {
     try {
-      const photoId = generateId();
-      const localUri = await persistCapturedPhoto(sourceUri, photoId);
+      const mediaId = generateId();
+      const extension = kind === 'VIDEO' ? 'mp4' : 'jpg';
+      const localUri = await persistCapturedMedia(sourceUri, mediaId, extension);
       await createLocalPhoto({
-        id: photoId,
+        id: mediaId,
         projectId,
         userId: user?.id ?? null,
+        kind,
+        durationMs: durationMs ?? null,
         localUri,
         latitude: geo.latitude,
         longitude: geo.longitude,
         altitude: geo.altitude,
         capturedAt,
       });
-      // Queue for sync (F2 adds the R2 upload step).
-      await enqueueSync('photo', photoId, {
-        id: photoId,
+      await enqueueSync('photo', mediaId, {
+        id: mediaId,
         projectId,
+        kind,
+        durationMs: durationMs ?? null,
         capturedAt,
         latitude: geo.latitude,
         longitude: geo.longitude,
@@ -232,36 +267,81 @@ export default function CaptureScreen() {
       });
       const count = savedCount + 1;
       setSavedCount(count);
-      showToast(`✓ Foto guardada${count > 1 ? ` (${count})` : ''}`);
+      const label = kind === 'VIDEO' ? 'Video guardado' : 'Foto guardada';
+      showToast(`✓ ${label}${count > 1 ? ` (${count})` : ''}`);
     } catch (error) {
       Alert.alert('Error al guardar', errorMessage(error));
     }
   };
 
-  /**
-   * Burst capture: shoots instantly, saves without asking and keeps the
-   * camera active so the user can take the next photo right away.
-   */
+  /** Burst photo capture: saves automatically and keeps the camera active. */
   const takePhoto = async () => {
-    if (!cameraRef.current || busyRef.current) {
+    if (!cameraRef.current || busyRef.current || recording) {
       return;
     }
     busyRef.current = true;
     setTaking(true);
     try {
-      // GPS refreshes in the background: never block the shutter on it.
       const result = await cameraRef.current.takePictureAsync({
         quality: 0.7,
         shutterSound: !muted, // iOS honors this; Android follows the system volume
       });
       void refreshGps();
-      await storePhoto(result.uri, new Date().toISOString());
+      await storeMedia('PHOTO', result.uri, new Date().toISOString());
     } catch {
       Alert.alert('Error', 'No se pudo capturar la foto. Intenta de nuevo.');
     } finally {
       setTaking(false);
       busyRef.current = false;
     }
+  };
+
+  const startVideo = () => {
+    if (!cameraRef.current || busyRef.current) {
+      return;
+    }
+    busyRef.current = true;
+    startedAtRef.current = Date.now();
+    setRecordSeconds(0);
+    const promise = cameraRef.current.recordAsync({ maxDuration: MAX_VIDEO_SECONDS });
+    recordPromiseRef.current = promise;
+    setRecording(true);
+    promise
+      .then(async (result) => {
+        if (!result) {
+          setRecording(false);
+          busyRef.current = false;
+          return;
+        }
+        const durationMs = Date.now() - startedAtRef.current;
+        setRecording(false);
+        void refreshGps();
+        await storeMedia(
+          'VIDEO',
+          result.uri,
+          new Date(startedAtRef.current).toISOString(),
+          durationMs,
+        );
+      })
+      .catch(() => {
+        setRecording(false);
+        Alert.alert('Error', 'No se pudo grabar el video. Intenta de nuevo.');
+      })
+      .finally(() => {
+        busyRef.current = false;
+      });
+  };
+
+  const stopVideo = () => {
+    if (!recording) {
+      return;
+    }
+    // Stops the recording; the pending promise resolves and saves the video.
+    cameraRef.current?.stopRecording();
+  };
+
+  const cycleRatio = () => {
+    setRatio((current) => RATIOS[(RATIOS.indexOf(current) + 1) % RATIOS.length]);
   };
 
   const projectLine = project ? `${project.code} · ${project.name}` : 'Cargando proyecto…';
@@ -272,6 +352,9 @@ export default function CaptureScreen() {
         (geo.altitude != null ? ` · ${Math.round(geo.altitude)} m` : '')
       : '📍 GPS no disponible';
   const stampLines = [`🏗️ ${projectLine}`, `👤 ${user?.fullName ?? ''}`, gpsLine];
+  const formatTimer = `${String(Math.floor(recordSeconds / 60)).padStart(2, '0')}:${String(
+    recordSeconds % 60,
+  ).padStart(2, '0')}`;
 
   // Camera permission loading.
   if (!permission) {
@@ -309,7 +392,10 @@ export default function CaptureScreen() {
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
         facing="back"
+        mode={mode === 'photo' ? 'picture' : 'video'}
         flash={flash}
+        enableTorch={torch}
+        ratio={ratio}
         zoom={zoom}
         onMountError={() => Alert.alert('Error', 'No se pudo iniciar la cámara.')}
       />
@@ -329,6 +415,14 @@ export default function CaptureScreen() {
         </Pressable>
         <Text style={styles.topTitle}>{project ? project.code : 'Captura'}</Text>
         <View style={styles.topRight}>
+          <Pressable
+            onPress={() => setTorch((t) => !t)}
+            style={[styles.iconButton, torch && styles.torchOn]}
+            accessibilityRole="button"
+            accessibilityLabel="Alternar linterna"
+          >
+            <Text style={styles.iconText}>🔦</Text>
+          </Pressable>
           <Pressable
             onPress={() => setMuted((m) => !m)}
             style={styles.iconButton}
@@ -350,9 +444,33 @@ export default function CaptureScreen() {
         </View>
       </View>
 
+      {/* Mode switch (photo/video) */}
+      <View style={styles.modeBar}>
+        <Pressable
+          onPress={() => setMode('photo')}
+          style={[styles.modeChip, mode === 'photo' && styles.modeChipActive]}
+          accessibilityRole="button"
+        >
+          <Text style={[styles.modeChipText, mode === 'photo' && styles.modeChipTextActive]}>
+            📷 Foto
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setMode('video')}
+          style={[styles.modeChip, mode === 'video' && styles.modeChipActive]}
+          accessibilityRole="button"
+        >
+          <Text style={[styles.modeChipText, mode === 'video' && styles.modeChipTextActive]}>
+            🎥 Video
+          </Text>
+        </Pressable>
+      </View>
+
       {/* Live stamp overlay */}
       <View style={styles.stampOverlay} pointerEvents="none">
-        <Text style={styles.stampTitle}>📷 {formatClock(now)}</Text>
+        <Text style={styles.stampTitle}>
+          {mode === 'video' && recording ? `🔴 REC ${formatTimer}` : `📷 ${formatClock(now)}`}
+        </Text>
         {stampLines.map((line, i) => (
           <Text key={i} style={styles.stampLine}>
             {line}
@@ -364,7 +482,19 @@ export default function CaptureScreen() {
         ) : null}
       </View>
 
-      {/* Zoom controls */}
+      {/* Aspect ratio control (left) */}
+      <View style={styles.ratioControl}>
+        <Pressable
+          onPress={cycleRatio}
+          style={styles.ratioChip}
+          accessibilityRole="button"
+          accessibilityLabel="Cambiar relación de aspecto"
+        >
+          <Text style={styles.ratioText}>{ratio}</Text>
+        </Pressable>
+      </View>
+
+      {/* Zoom controls (right) */}
       <View style={styles.zoomControls}>
         <Text style={styles.zoomLabel}>×{zoomFactor.toFixed(1)}</Text>
         <Pressable
@@ -385,21 +515,41 @@ export default function CaptureScreen() {
         </Pressable>
       </View>
 
-      {/* Shutter */}
+      {/* Shutter / record button */}
       <View style={styles.shutterRow}>
-        <Pressable
-          onPress={takePhoto}
-          disabled={taking}
-          accessibilityRole="button"
-          accessibilityLabel="Tomar foto"
-          style={styles.shutterButton}
-        >
-          {taking ? (
-            <ActivityIndicator color={colors.surface} />
-          ) : (
-            <View style={styles.shutterInner} />
-          )}
-        </Pressable>
+        {mode === 'photo' ? (
+          <Pressable
+            onPress={takePhoto}
+            disabled={taking}
+            accessibilityRole="button"
+            accessibilityLabel="Tomar foto"
+            style={styles.shutterButton}
+          >
+            {taking ? (
+              <ActivityIndicator color={colors.surface} />
+            ) : (
+              <View style={styles.shutterInner} />
+            )}
+          </Pressable>
+        ) : recording ? (
+          <Pressable
+            onPress={stopVideo}
+            accessibilityRole="button"
+            accessibilityLabel="Detener grabación"
+            style={[styles.shutterButton, styles.recordButton]}
+          >
+            <View style={styles.recordStop} />
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={startVideo}
+            accessibilityRole="button"
+            accessibilityLabel="Empezar a grabar"
+            style={styles.shutterButton}
+          >
+            <View style={styles.recordDot} />
+          </Pressable>
+        )}
       </View>
 
       {/* Saved toast */}
@@ -438,23 +588,61 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingTop: 56,
     paddingBottom: 12,
   },
-  topRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  topRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  flashButton: { minWidth: 68, paddingHorizontal: 10 },
-  flashLabel: { fontSize: 12 },
-  iconText: { color: '#FFF', fontSize: 18, fontWeight: '700' },
+  torchOn: { backgroundColor: 'rgba(245,158,11,0.85)' },
+  flashButton: { minWidth: 62, paddingHorizontal: 8 },
+  flashLabel: { fontSize: 11 },
+  iconText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
   topTitle: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+  modeBar: {
+    position: 'absolute',
+    top: 104,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 20,
+    padding: 3,
+  },
+  modeChip: { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 17 },
+  modeChipActive: { backgroundColor: '#FFFFFF' },
+  modeChipText: { color: '#E2E8F0', fontSize: 13, fontWeight: '700' },
+  modeChipTextActive: { color: colors.text },
+  stampOverlay: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 132,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 12,
+    padding: 12,
+  },
+  stampTitle: { color: '#FFF', fontSize: 15, fontWeight: '700', marginBottom: 4 },
+  stampLine: { color: '#E2E8F0', fontSize: 13, marginTop: 2 },
+  stampHint: { color: '#FBBF24', fontSize: 12, marginTop: 6, fontStyle: 'italic' },
+  ratioControl: {
+    position: 'absolute',
+    left: 14,
+    top: '38%',
+  },
+  ratioChip: {
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  ratioText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
   zoomControls: {
     position: 'absolute',
     right: 14,
@@ -473,26 +661,14 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   zoomButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   zoomButtonText: { color: '#FFF', fontSize: 22, fontWeight: '700' },
-  stampOverlay: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 130,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 12,
-    padding: 12,
-  },
-  stampTitle: { color: '#FFF', fontSize: 15, fontWeight: '700', marginBottom: 4 },
-  stampLine: { color: '#E2E8F0', fontSize: 13, marginTop: 2 },
-  stampHint: { color: '#FBBF24', fontSize: 12, marginTop: 6, fontStyle: 'italic' },
   shutterRow: {
     position: 'absolute',
     bottom: 44,
@@ -510,9 +686,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   shutterInner: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#FFF' },
+  recordButton: { borderColor: '#F87171', backgroundColor: 'rgba(220,38,38,0.4)' },
+  recordDot: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#DC2626' },
+  recordStop: { width: 26, height: 26, borderRadius: 4, backgroundColor: '#FFF' },
   toast: {
     position: 'absolute',
-    bottom: 132,
+    bottom: 134,
     alignSelf: 'center',
     backgroundColor: 'rgba(22,163,74,0.92)',
     borderRadius: 18,

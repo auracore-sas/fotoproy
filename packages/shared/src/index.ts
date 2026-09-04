@@ -17,6 +17,9 @@ export type UserRole = (typeof USER_ROLES)[number];
 export const PLAN_KINDS = ['IMAGE', 'PDF'] as const;
 export type PlanKind = (typeof PLAN_KINDS)[number];
 
+export const MEDIA_KINDS = ['PHOTO', 'VIDEO'] as const;
+export type MediaKind = (typeof MEDIA_KINDS)[number];
+
 /** Entity kinds that the local sync queue can process. */
 export const SYNC_ENTITY_TYPES = ['photo', 'pin', 'comment', 'plan'] as const;
 export type SyncEntityType = (typeof SYNC_ENTITY_TYPES)[number];
@@ -163,6 +166,9 @@ export const createPhotoInputSchema = z.object({
   /** Client UUID — enables idempotency when the mobile retries. */
   id: uuidSchema,
   projectId: uuidSchema,
+  kind: z.enum(MEDIA_KINDS).default('PHOTO'),
+  /** Video duration in milliseconds (only for kind VIDEO). */
+  durationMs: z.number().int().min(0).optional(),
   storageKey: z.string().min(1, 'storageKey is required (object uploaded to R2)'),
   thumbnailStorageKey: z.string().optional(),
   latitude: latitudeSchema,
@@ -177,6 +183,8 @@ export const photoSchema = z.object({
   id: uuidSchema,
   projectId: uuidSchema,
   userId: z.string().uuid().nullable(),
+  kind: z.enum(MEDIA_KINDS),
+  durationMs: z.number().int().nullable(),
   imageUrl: z.string().url(),
   thumbnailUrl: z.string().url().nullable(),
   latitude: latitudeSchema,

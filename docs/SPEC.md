@@ -1,9 +1,9 @@
 # FotoProy — Especificación Técnica y de Producto
 
 > **Producto:** FotoProy — Documentación fotográfica de proyectos de construcción
-> **Versión:** 2.1 (decisiones cerradas)
-> **Estado:** Lista como base de arranque del MVP. Decisiones de producto/stack cerradas (§10); solo quedan pendientes de negocio (precios), que no bloquean el desarrollo.
-> **Historial:** v1.0 (archivada en `docs/archive/SPEC-v1.0-raw.md`) tenía foco en ingeniería eléctrica LATAM (FieldElectro/ElectroField). v2.0 redefinió el producto: **multi-perfil de construcción**, nombre **FotoProy**, móvil iOS+Android con un único código, offline-first. v2.1 cierra las decisiones abiertas.
+> **Versión:** 2.2 (video añadido al MVP)
+> **Estado:** Lista como base del MVP. Decisiones de producto/stack cerradas (§10); solo quedan pendientes de negocio (precios), que no bloquean el desarrollo.
+> **Historial:** v1.0 (archivada en `docs/archive/SPEC-v1.0-raw.md`) tenía foco en ingeniería eléctrica LATAM (FieldElectro/ElectroField). v2.0 redefinió el producto: **multi-perfil de construcción**, nombre **FotoProy**, móvil iOS+Android con un único código, offline-first. v2.1 cierra las decisiones abiertas. **v2.2:** video corto de obra añadido al MVP (decisión #7).
 > **Importante:** el esquema de base de datos de la §5 es **informativo / de referencia** — puede reutilizarse o cambiarse por completo; la fuente de verdad será el esquema Prisma al momento de implementar.
 
 ---

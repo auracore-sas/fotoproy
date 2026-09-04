@@ -1,7 +1,7 @@
 import { desc, eq, isNull } from 'drizzle-orm';
 import { db } from './database';
 import { photos, syncQueue } from './schema';
-import type { SyncStatus } from './schema';
+import type { MediaKind, SyncStatus } from './schema';
 import { generateId } from '../id';
 
 /* ------------------------------------------------------------------ */
@@ -11,6 +11,8 @@ import { generateId } from '../id';
 export interface NewLocalPhoto {
   id: string;
   projectId: string;
+  kind?: MediaKind;
+  durationMs?: number | null;
   userId?: string | null;
   localUri: string;
   thumbnailUri?: string | null;
@@ -21,11 +23,13 @@ export interface NewLocalPhoto {
   capturedAt: string; // ISO UTC (device clock)
 }
 
-/** Persists a photo locally first — always succeeds, even offline. */
+/** Persists a media item locally first — always succeeds, even offline. */
 export async function createLocalPhoto(input: NewLocalPhoto): Promise<void> {
   await db.insert(photos).values({
     id: input.id,
     projectId: input.projectId,
+    kind: input.kind ?? 'PHOTO',
+    durationMs: input.durationMs ?? null,
     userId: input.userId ?? null,
     localUri: input.localUri,
     thumbnailUri: input.thumbnailUri ?? null,
@@ -65,7 +69,6 @@ export async function markPhotoSynced(id: string, syncedAt: string): Promise<voi
 /* ------------------------------------------------------------------ */
 
 export type QueueableEntityType = 'photo' | 'pin' | 'comment' | 'plan';
-
 export interface SyncQueueItem {
   id: string;
   entityType: QueueableEntityType;

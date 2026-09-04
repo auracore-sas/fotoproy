@@ -35,6 +35,11 @@ enum PlanKind {
   PDF
 }
 
+enum MediaKind {
+  PHOTO
+  VIDEO
+}
+
 // ---------------------------------------------------------------------------
 // Organizations / companies (B2B customers)
 // ---------------------------------------------------------------------------
@@ -129,6 +134,8 @@ model Photo {
   project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   userId       String?
   user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  kind         MediaKind @default(PHOTO)
+  durationMs   Int? // Video duration in ms (kind VIDEO)
   imageUrl     String
   thumbnailUrl String?
   latitude     Decimal? @db.Decimal(10, 7) // Device GPS (optional)

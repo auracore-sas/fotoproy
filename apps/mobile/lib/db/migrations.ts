@@ -84,4 +84,12 @@ export const MIGRATIONS: LocalMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_queue_status ON sync_queue(status);`,
     ],
   },
+  {
+    // v2 — media kind support: photos can now be short videos.
+    version: 2,
+    statements: [
+      `ALTER TABLE photos ADD COLUMN kind TEXT NOT NULL DEFAULT 'PHOTO';`,
+      `ALTER TABLE photos ADD COLUMN duration_ms INTEGER;`,
+    ],
+  },
 ];

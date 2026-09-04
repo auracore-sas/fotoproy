@@ -6,11 +6,18 @@ import { sqliteTable, text, real, integer } from 'drizzle-orm/sqlite-core';
  * append-only: rows are created locally with a client UUID and never edited.
  */
 
+export const mediaKinds = ['PHOTO', 'VIDEO'] as const;
+export type MediaKind = (typeof mediaKinds)[number];
+
 export const photos = sqliteTable('photos', {
   id: text('id').primaryKey(), // client UUID v4
   projectId: text('project_id').notNull(),
   userId: text('user_id'), // owner (from the session), nullable while offline
-  localUri: text('local_uri').notNull(), // local image file
+  kind: text('kind', { enum: [...mediaKinds] })
+    .notNull()
+    .default('PHOTO'),
+  durationMs: integer('duration_ms'), // video duration in ms (kind VIDEO)
+  localUri: text('local_uri').notNull(), // local media file
   thumbnailUri: text('thumbnail_uri'), // local thumbnail file
   latitude: real('latitude'),
   longitude: real('longitude'),
