@@ -35,7 +35,8 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "FotoProy usa la cámara para documentar el avance de tu obra."
+          "cameraPermission": "FotoProy usa la cámara para documentar el avance de tu obra.",
+          "microphonePermission": "FotoProy usa el micrófono para grabar videos con audio."
         }
       ],
       [

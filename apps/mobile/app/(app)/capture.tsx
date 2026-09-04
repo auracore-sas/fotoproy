@@ -1,4 +1,4 @@
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
@@ -63,6 +63,7 @@ export default function CaptureScreen() {
   const { projectId } = useLocalSearchParams<{ projectId: string }>();
   const { user, token } = useAuth();
   const [permission, requestPermission] = useCameraPermissions();
+  const [, requestMicPermission] = useMicrophonePermissions();
   const cameraRef = useRef<CameraView | null>(null);
 
   const [project, setProject] = useState<Project | null>(null);
@@ -70,6 +71,7 @@ export default function CaptureScreen() {
   const [flash, setFlash] = useState<FlashMode>('off');
   const [torch, setTorch] = useState(false);
   const [muted, setMuted] = useState(false); // shutter sound toggle (iOS)
+  const [forceSilentVideo, setForceSilentVideo] = useState(false); // mic denied → video without audio
   const [ratio, setRatio] = useState<AspectRatio>('4:3');
   const [zoom, setZoom] = useState(0); // 0..1 mapped to the device zoom range
   const zoomRef = useRef(0);
@@ -296,10 +298,20 @@ export default function CaptureScreen() {
     }
   };
 
-  const startVideo = () => {
+  const startVideo = async () => {
     if (!cameraRef.current || busyRef.current) {
       return;
     }
+
+    // Video includes audio by default: ask for the microphone. If denied,
+    // fall back to a silent recording instead of failing.
+    const micResult = await requestMicPermission().catch(() => null);
+    const silent = !(micResult?.granted ?? false);
+    setForceSilentVideo(silent);
+    if (silent) {
+      showToast('Micrófono sin permiso: video sin audio');
+    }
+
     busyRef.current = true;
     startedAtRef.current = Date.now();
     setRecordSeconds(0);
@@ -323,8 +335,9 @@ export default function CaptureScreen() {
           durationMs,
         );
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         setRecording(false);
+        console.warn('Video recording failed:', error);
         Alert.alert('Error', 'No se pudo grabar el video. Intenta de nuevo.');
       })
       .finally(() => {
@@ -395,6 +408,7 @@ export default function CaptureScreen() {
         mode={mode === 'photo' ? 'picture' : 'video'}
         flash={flash}
         enableTorch={torch}
+        mute={forceSilentVideo}
         ratio={ratio}
         zoom={zoom}
         onMountError={() => Alert.alert('Error', 'No se pudo iniciar la cámara.')}
