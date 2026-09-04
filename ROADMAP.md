@@ -55,11 +55,13 @@
 
 **DoD global F1 = M1.**
 
+> ✅ **Backend F1.1–F1.3 completado (2026-09-03)** — verificado por curl: register→org+ADMIN, login, me, roles, miembros, CRUD projects con org-scoping, 401/403/404/400/409 según caso. Pendiente: **móvil F1.4–F1.10** (M1).
+
 ### Backend (API)
 
-- [ ] **F1.1** Módulo **auth**: `POST /auth/register` (crea `organization` + primer usuario `ADMIN`), `POST /auth/login`, `GET /auth/me`. Hash con argon2/bcrypt. JWT access (+refresh si el equipo lo quiere; mínimo viable: access largo en MVP).
-- [ ] **F1.2** **Roles y miembros**: guard global + decorador `@Roles(...)`; `enum ADMIN/SUPERVISOR/TECHNICIAN`. Alta de miembros: el `ADMIN` crea usuarios de su org (email + contraseña temporal) — flujo simple, sin invitaciones complejas ⚠️ _validar con producto_.
-- [ ] **F1.3** Módulo **projects** (CRUD): crear/editar/listar/ver; `UNIQUE(organization_id, code)`; solo org propia; ADMIN/SUPERVISOR escriben, TECHNICIAN lee.
+- [x] **F1.1** Módulo **auth**: `POST /auth/register` (crea `organization` + primer usuario `ADMIN`), `POST /auth/login`, `GET /auth/me`. Hash con **bcryptjs** (sin binarios nativos). JWT access 7d. Implementado en `apps/api/src/auth` + guards globales.
+- [x] **F1.2** **Roles y miembros**: guard global + decoradores `@Roles`/`@Public`/`@CurrentUser`; `POST /users` (ADMIN crea miembros con contraseña temporal) y `GET /users` (ADMIN/SUPERVISOR).
+- [x] **F1.3** Módulo **projects** (CRUD + DELETE): `UNIQUE(organizationId, code)` (409); org-scoping estricto (404 cross-org); ADMIN/SUPERVISOR escriben, TECHNICIAN lee (403); validación zod con los schemas de `@fotoproy/shared` vía `ZodValidationPipe`.
 
 ### Móvil (Expo)
 
@@ -176,6 +178,7 @@ Orden sugerido (P0 = primero cuando se valide en campo):
 
 ## Registro de cambios
 
+- **v1.3 (2026-09-03):** Fase 1 backend completada (F1.1–F1.3): módulos `auth`, `users` y `projects`. Infra común nueva: guards globales `JwtAuthGuard`/`RolesGuard`, decoradores `@Public`/`@Roles`/`@CurrentUser`, `ZodValidationPipe` (valida con schemas de `@fotoproy/shared`). Envs: `JWT_SECRET`, `JWT_EXPIRES_IN`. Verificado por curl (401/403/404/400/409).
 - **v1.2 (2026-09-02):** regla de codificación aplicada: código, comentarios, logs, mensajes de API, schema Prisma (comentarios) y descripciones de paquetes en inglés (identificadores y nombres de tablas ya lo estaban). La documentación (`docs/`, ROADMAP) y el copy de UI quedan en español/capa i18n.
 - **v1.1 (2026-09-02):** Fase 0 completada (hito M0). Notas técnicas del stack efectivo:
   - **TypeScript 6.0.3** en todo el monorepo: TS 7.0.2 elimina `moduleResolution: node10` y el CLI de Nest exige la API de compilador que recién vuelve en 7.1.
