@@ -23,7 +23,9 @@ FotoProy es una plataforma móvil (iOS + Android) para **capturar, almacenar, or
 
 ## Características principales (alcance MVP)
 
-- 📷 **Cámara con estampa**: captura con sello en vivo (fecha/hora, proyecto, usuario y GPS cuando está disponible).
+- 📷 **Cámara con estampa**: captura con sello en vivo (fecha/hora, proyecto, usuario y GPS cuando está disponible), en modo ráfaga, con zoom por pellizco, linterna y relación de aspecto.
+- 🎥 **Fotos y videos de obra**: graba videos cortos con audio (hasta ~3 min) con el mismo flujo de captura.
+- 🖼️ **Galería local offline**: todo lo capturado queda guardado en el dispositivo y se ve en la galería del proyecto aunque no haya red.
 - 📍 **Anclaje sobre planos**: sube el mapa/plano de la obra (imagen o PDF multipágina) y **ancla cada foto tocando el punto** del plano donde se tomó (coordenadas relativas por página).
 - 📁 **Archivo organizado por proyectos**: proyectos → planos → fotos ancladas, con galería y filtros por usuario/fecha/plano.
 - 💬 **Comentarios**: alinea al equipo comentando directamente sobre cada foto.
@@ -57,7 +59,7 @@ _El esquema de base de datos detallado en la SPEC es informativo; la fuente de v
 ```
 fotoproy/
 ├─ apps/
-│  ├─ mobile/            # Expo 57 + React Native + TS (iOS + Android) — base F1
+│  ├─ mobile/            # Expo 57 + React Native + TS (iOS + Android) — Fase 1: captura + galería local
 │  └─ api/               # NestJS 12 (ESM) + Prisma — API REST
 ├─ packages/
 │  ├─ database/          # Schema Prisma (fuente de verdad) + migraciones SQL

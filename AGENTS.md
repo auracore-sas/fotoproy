@@ -17,7 +17,7 @@
 | [README.md](README.md)       | Inicio rápido + comandos.                                                                                                    |
 | [AGENTS.md](AGENTS.md)       | Este archivo: reglas y flujos.                                                                                               |
 
-**Estado actual:** Fase 0 ✅ (M0: monorepo + API `/health`). **Siguiente: Fase 1** (auth JWT, roles, membresías, CRUD proyectos + base de la app Expo). Ver ROADMAP para detalle.
+**Estado actual:** Fase 0 ✅ (M0) · **Fase 1 ✅ (M1)** — backend (auth JWT, roles, membresías, CRUD projects) y móvil completo: sesión, cámara con estampa GPS (ráfaga, zoom pinch, linterna, video corto), BD local SQLite + Drizzle con `sync_queue`, galería local de fotos/videos. **Siguiente: Fase 2** (R2 + pre-signed URLs + endpoint photos + motor de sync). Ver ROADMAP para detalle.
 
 ---
 
@@ -56,7 +56,7 @@
 fotoproy/
 ├─ apps/
 │  ├─ api/        # NestJS 12 (ESM): API REST — consume @fotoproy/shared y @fotoproy/database
-│  └─ mobile/     # 🔜 F1 — Expo + React Native + TS (iOS + Android)
+│  └─ mobile/     # Expo 57 + React Native + TS (iOS + Android) — cámara, BD local, galería
 ├─ packages/
 │  ├─ shared/     # zod schemas + tipos (contrato) — sin dependencias internas
 │  └─ database/   # schema.prisma (fuente de verdad BD) + migraciones + re-export del cliente
@@ -149,13 +149,14 @@ cd packages/database
 
 ---
 
-## 8. Fase 1 (próxima) — qué viene y cómo arrancar
+## 8. Fase 2 (próxima) — qué viene y cómo arrancar
 
-Ver tareas F1.1–F1.10 del ROADMAP. Resumen:
+Ver tareas F2.1–F2.8 del ROADMAP. Resumen:
 
-- **API**: módulo `auth` (register crea org + ADMIN, login, me, JWT), guard de roles + alta de miembros, CRUD `projects`.
-- **Móvil**: crear `apps/mobile` con `create-expo-app` (TS) — recordar que el workspace ya incluye `apps/*`; añadir sesión (expo-secure-store), pantallas login/registro, cámara (expo-camera), SQLite local (expo-sqlite + Drizzle) con `sync_queue`.
-- Mientras no exista `apps/mobile`, `pnpm build`/`typecheck` no lo incluyen (no romper por eso).
+- **Backend/archivos**: buckets Cloudflare R2 + servicio de **pre-signed URLs**; endpoint `POST /photos` (metadatos + `storageKey`, idempotente por UUID cliente; soporta `kind PHOTO/VIDEO` + `durationMs`) y `GET /photos` (paginado con thumbnails); procesado de thumbnails (sharp).
+- **Despliegue básico**: API contenedorizada + Postgres gestionado + R2 + dominio/SSL + CI mínimo.
+- **Móvil — motor de sync**: detector de conectividad, procesador FIFO de `sync_queue` con backoff exponencial, subida directa a R2 (pre-signed) + `POST /photos`, indicador de pendientes en la UI.
+- `apps/mobile` YA existe y tiene script `typecheck`: mantenerlo en verde junto al resto (`pnpm -r typecheck`).
 
 ---
 

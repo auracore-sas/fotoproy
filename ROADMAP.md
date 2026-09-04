@@ -72,7 +72,7 @@
 - [x] **F1.6** **BD local** (`expo-sqlite` + `drizzle-orm`): `lib/db/schema.ts` (tablas espejo photos/photo_pins/photo_comments/project_plans/cached_projects + `sync_queue`), migraciones versionadas por `PRAGMA user_version` (`lib/db/migrations.ts`, v1) y repos (`lib/db/repos.ts`: photos local-first, enqueue/list/update `sync_queue`, contador pendientes). Inicialización en `app/_layout.tsx`.
 - [x] **F1.7** **Cámara** (`expo-camera`): `app/(app)/capture.tsx` — preview pantalla completa, **flash 3 modos (OFF/AUTO/ON)**, **zoom por pellizco (pinch 2 dedos, PanResponder) + botones ＋/－**, permisos con estado denegado + abrir ajustes; **modo ráfaga** (guardado automático, cámara activa, toast por foto); sonido de obturador 🔊/🔇. (Enfoque al tocar: pendiente de soporte de la API de expo-camera.)
 - [ ] **F1.8** **GPS/estampa**: `expo-location` (permiso opcional — si se niega, la foto se toma sin GPS, no bloquear). Capturar lat/lng/altitud al disparar. Overlay en vivo: fecha/hora, proyecto, usuario, coords si existen. _(No quemar la estampa en la imagen en MVP; es metadato + overlay. Revisar con producto.)_
-- [x] **F1.9 (parcial)** **Captura local-first**: disparar → UUID cliente → archivo copiado a `documentDirectory/fotoproy/` (`lib/media.ts`) → `createLocalPhoto` en SQLite **siempre** → `enqueueSync('photo', …)` en cola. Pendiente: thumbnails locales y galería (F1.10).
+- [x] **F1.9** **Captura local-first** (foto y video): disparar/grabar → UUID cliente → archivo copiado a `documentDirectory/fotoproy/` (`lib/media.ts`, jpg/mp4) → `createLocalPhoto` en SQLite **siempre** → `enqueueSync('photo', …)` con `kind`/`durationMs`. Thumbnails locales de video en la galería (F1.10).
 - [x] **F1.10** **Galería local** (`app/(app)/gallery.tsx` + `media-viewer.tsx`): cuadrícula de fotos y videos del proyecto desde SQLite (se refresca al enfocar), thumbnails de video con `expo-video-thumbnails`, badge ▶ + duración; visor a pantalla completa con reproductor `expo-video` (controles nativos) y metadatos (fecha, GPS, duración). Acceso desde el detalle del proyecto con contador de medios locales.
 
 ---
@@ -180,6 +180,7 @@ Orden sugerido (P0 = primero cuando se valide en campo):
 
 ## Registro de cambios
 
+- **v1.12 (2026-09-04):** cierre documental de la Fase 1 (M1): AGENTS.md y README actualizados al nuevo estado; tag `v0.1.0-m1`. Siguiente: Fase 2.
 - **v1.11 (2026-09-04):** F1.10 completada — galería local con fotos+videos, thumbnails de video (expo-video-thumbnails), visor fullscreen con expo-video y metadatos. **M1 logrado: foto con estampa visible en galería local.**
 - **v1.10 (2026-09-04):** ✅ pruebas en dispositivo Android: fotos en ráfaga, zoom por pellizco, linterna, relación de aspecto y **video con audio** funcionando (requiere permiso de micrófono; si se niega, graba sin audio).
 - **v1.9 (2026-09-03):** **video en el MVP** (decisión SPEC v2.2 #7) + controles de cámara: linterna 🔦 (`enableTorch`), relación de aspecto 4:3/16:9/1:1 y **modo 🎥 Video** (grabar/parar, límite 3 min, timer REC, guardado automático local-first). Modelo: `MediaKind PHOTO/VIDEO` + `durationMs` en shared, schema Prisma (migración `add_media_kind`) y BD local (migración v2).
