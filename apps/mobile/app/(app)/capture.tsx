@@ -2,7 +2,16 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  PanResponder,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { colors, Button } from '../../components/ui';
 import { api } from '../../lib/api';
 import { errorMessage, useAuth } from '../../lib/auth';
@@ -35,6 +44,14 @@ async function requestLocation(): Promise<boolean> {
   return status === 'granted';
 }
 
+/** Distance between two touch points (screen coordinates). */
+function touchDistance(
+  a: { pageX: number; pageY: number },
+  b: { pageX: number; pageY: number },
+): number {
+  return Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
+}
+
 export default function CaptureScreen() {
   const router = useRouter();
   const { projectId } = useLocalSearchParams<{ projectId: string }>();
@@ -46,6 +63,47 @@ export default function CaptureScreen() {
   const [flash, setFlash] = useState<FlashMode>('off');
   const [muted, setMuted] = useState(false); // shutter sound toggle (iOS)
   const [zoom, setZoom] = useState(0); // 0..1 mapped to the device zoom range
+  const zoomRef = useRef(0);
+
+  /** Clamps zoom to [0,1], keeps the ref in sync and updates the label. */
+  const applyZoom = (next: number) => {
+    const clamped = Math.min(1, Math.max(0, next));
+    zoomRef.current = clamped;
+    setZoom(clamped);
+  };
+
+  // Two-finger pinch: opening/closing the finger gap zooms in/out.
+  const pinchStartDistance = useRef<number | null>(null);
+  const pinchStartZoom = useRef(0);
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (evt) => evt.nativeEvent.touches.length === 2,
+      onPanResponderGrant: (evt) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches.length === 2) {
+          pinchStartDistance.current = touchDistance(touches[0], touches[1]);
+          pinchStartZoom.current = zoomRef.current;
+        }
+      },
+      onPanResponderMove: (evt) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches.length !== 2 || pinchStartDistance.current == null) {
+          return;
+        }
+        const distance = touchDistance(touches[0], touches[1]);
+        const ratio = distance / pinchStartDistance.current;
+        // Doubling the finger gap (ratio 2) reaches max zoom from minimum.
+        applyZoom(pinchStartZoom.current + (ratio - 1));
+      },
+      onPanResponderRelease: () => {
+        pinchStartDistance.current = null;
+      },
+      onPanResponderTerminate: () => {
+        pinchStartDistance.current = null;
+      },
+    }),
+  ).current;
   const [now, setNow] = useState(new Date());
   const [geo, setGeo] = useState<GeoState>({
     status: 'idle',
@@ -255,6 +313,9 @@ export default function CaptureScreen() {
         zoom={zoom}
         onMountError={() => Alert.alert('Error', 'No se pudo iniciar la cámara.')}
       />
+
+      {/* Pinch-to-zoom capture layer (under the UI controls). */}
+      <View style={StyleSheet.absoluteFill} {...panResponder.panHandlers} />
 
       {/* Top bar */}
       <View style={styles.topBar}>
