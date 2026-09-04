@@ -27,6 +27,8 @@ interface GeoState {
   altitude: number | null;
 }
 
+type FlashMode = 'off' | 'auto' | 'on';
+
 interface Shot {
   uri: string;
   capturedAt: string; // ISO UTC
@@ -55,7 +57,8 @@ export default function CaptureScreen() {
   const cameraRef = useRef<CameraView | null>(null);
 
   const [project, setProject] = useState<Project | null>(null);
-  const [flash, setFlash] = useState<'off' | 'on'>('off');
+  const [flash, setFlash] = useState<FlashMode>('off');
+  const [zoom, setZoom] = useState(0); // 0..1 mapped to device zoom range
   const [now, setNow] = useState(new Date());
   const [geo, setGeo] = useState<GeoState>({
     status: 'idle',
@@ -152,12 +155,11 @@ export default function CaptureScreen() {
     }
     setTaking(true);
     try {
-      // Refresh GPS right before the shot when location is available.
-      if (geo.status === 'ready' || geo.status === 'error') {
-        await refreshGps();
-      }
-      const result = await cameraRef.current.takePictureAsync({ quality: 0.85 });
+      // Capture immediately — the GPS keeps refreshing in the background, so
+      // the shutter feels instant and the freshest fix is used when saving.
+      const result = await cameraRef.current.takePictureAsync({ quality: 0.7 });
       setShot({ uri: result.uri, capturedAt: new Date().toISOString() });
+      void refreshGps();
     } catch {
       Alert.alert('Error', 'No se pudo capturar la foto. Intenta de nuevo.');
     } finally {
@@ -204,6 +206,7 @@ export default function CaptureScreen() {
   };
 
   const projectLine = project ? `${project.code} · ${project.name}` : 'Cargando proyecto…';
+  const zoomFactor = 1 + zoom * 3; // approximate visual multiplier for the label
   const gpsLine =
     geo.status === 'ready' && geo.latitude != null
       ? `📍 ${geo.latitude.toFixed(6)}, ${geo.longitude?.toFixed(6) ?? '-'}` +
@@ -283,6 +286,7 @@ export default function CaptureScreen() {
         style={StyleSheet.absoluteFill}
         facing="back"
         flash={flash}
+        zoom={zoom}
         onMountError={() => Alert.alert('Error', 'No se pudo iniciar la cámara.')}
       />
 
@@ -297,12 +301,14 @@ export default function CaptureScreen() {
         </Pressable>
         <Text style={styles.topTitle}>{project ? project.code : 'Captura'}</Text>
         <Pressable
-          onPress={() => setFlash((f) => (f === 'off' ? 'on' : 'off'))}
-          style={styles.iconButton}
+          onPress={() => setFlash((f) => (f === 'off' ? 'auto' : f === 'auto' ? 'on' : 'off'))}
+          style={[styles.iconButton, styles.flashButton]}
           accessibilityRole="button"
           accessibilityLabel="Alternar flash"
         >
-          <Text style={styles.iconText}>{flash === 'off' ? '⚡' : '⚡'}</Text>
+          <Text style={[styles.iconText, styles.flashLabel]}>
+            {flash === 'off' ? '⚡OFF' : flash === 'auto' ? '⚡AUTO' : '⚡ON'}
+          </Text>
         </Pressable>
       </View>
 
@@ -318,6 +324,27 @@ export default function CaptureScreen() {
         {geo.status === 'denied' ? (
           <Text style={styles.stampHint}>Sin permiso de ubicación: la foto irá sin GPS.</Text>
         ) : null}
+      </View>
+
+      {/* Zoom controls */}
+      <View style={styles.zoomControls}>
+        <Text style={styles.zoomLabel}>×{zoomFactor.toFixed(1)}</Text>
+        <Pressable
+          onPress={() => setZoom((z) => Math.min(1, Math.round((z + 0.15) * 100) / 100))}
+          style={styles.zoomButton}
+          accessibilityRole="button"
+          accessibilityLabel="Acercar"
+        >
+          <Text style={styles.zoomButtonText}>＋</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setZoom((z) => Math.max(0, Math.round((z - 0.15) * 100) / 100))}
+          style={styles.zoomButton}
+          accessibilityRole="button"
+          accessibilityLabel="Alejar"
+        >
+          <Text style={styles.zoomButtonText}>－</Text>
+        </Pressable>
       </View>
 
       {/* Shutter */}
@@ -378,8 +405,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  flashButton: { minWidth: 68, paddingHorizontal: 10 },
+  flashLabel: { fontSize: 12 },
   iconText: { color: '#FFF', fontSize: 18, fontWeight: '700' },
   topTitle: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+  zoomControls: {
+    position: 'absolute',
+    right: 14,
+    top: '38%',
+    alignItems: 'center',
+    gap: 8,
+  },
+  zoomLabel: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    overflow: 'hidden',
+  },
+  zoomButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomButtonText: { color: '#FFF', fontSize: 22, fontWeight: '700' },
   stampOverlay: {
     position: 'absolute',
     left: 16,
