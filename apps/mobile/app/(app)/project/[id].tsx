@@ -1,12 +1,13 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { CenterLoader, colors, ErrorBanner, Screen, textStyles } from '../../../components/ui';
 import { api } from '../../../lib/api';
 import { errorMessage, useAuth } from '../../../lib/auth';
 import type { Project } from '../../../lib/types';
 
 export default function ProjectDetailScreen() {
+  const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { token } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
@@ -64,10 +65,22 @@ export default function ProjectDetailScreen() {
           <View style={styles.comingSoon}>
             <Text style={styles.comingSoonTitle}>📷 Documentación fotográfica</Text>
             <Text style={styles.comingSoonText}>
-              Próximamente: capturar fotos con estampa, subir el plano de la obra y anclar cada foto
-              sobre el plano. (Fase 1 — en desarrollo)
+              Captura fotos con estampa (fecha, proyecto, usuario y GPS) y déjalas guardadas en el
+              dispositivo. La galería y el anclaje sobre planos llegan en las próximas fases.
             </Text>
           </View>
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push({ pathname: '/capture', params: { projectId: id } })}
+            style={({ pressed }) => [styles.captureButton, pressed && { opacity: 0.85 }]}
+          >
+            <Text style={styles.captureButtonIcon}>📷</Text>
+            <View style={styles.captureButtonText}>
+              <Text style={styles.captureButtonTitle}>Tomar foto</Text>
+              <Text style={styles.captureButtonSubtitle}>Documenta el avance de la obra</Text>
+            </View>
+          </Pressable>
         </ScrollView>
       ) : null}
     </Screen>
@@ -118,4 +131,16 @@ const styles = StyleSheet.create({
   },
   comingSoonTitle: { fontSize: 15, fontWeight: '700', color: colors.primary },
   comingSoonText: { fontSize: 14, color: colors.textMuted, marginTop: 6, lineHeight: 20 },
+  captureButton: {
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary,
+    borderRadius: 14,
+    padding: 18,
+  },
+  captureButtonIcon: { fontSize: 26, marginRight: 12 },
+  captureButtonText: { flex: 1 },
+  captureButtonTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  captureButtonSubtitle: { color: '#DBEAFE', fontSize: 13, marginTop: 2 },
 });

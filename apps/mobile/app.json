@@ -10,7 +10,10 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.fotoproy.app"
+      "bundleIdentifier": "com.fotoproy.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "FotoProy usa la cámara para documentar el avance de tu obra."
+      }
     },
     "android": {
       "package": "com.fotoproy.app",
@@ -25,6 +28,22 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": ["expo-router", "expo-secure-store", "expo-sqlite"]
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-sqlite",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "FotoProy usa la cámara para documentar el avance de tu obra."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "FotoProy usa tu ubicación para estampar las fotos de obra."
+        }
+      ]
+    ]
   }
 }

@@ -20,6 +20,7 @@ export default function AppLayout() {
       }}
     >
       <Stack.Screen name="index" options={{ title: 'Proyectos' }} />
+      <Stack.Screen name="capture" options={{ headerShown: false }} />
       <Stack.Screen name="project/[id]" options={{ title: 'Proyecto' }} />
       <Stack.Screen name="new-project" options={{ title: 'Nuevo proyecto' }} />
     </Stack>
