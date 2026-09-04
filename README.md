@@ -57,7 +57,7 @@ _El esquema de base de datos detallado en la SPEC es informativo; la fuente de v
 ```
 fotoproy/
 ├─ apps/
-│  ├─ mobile/            # 🔜 Fase 1 — Expo + React Native + TypeScript (iOS + Android)
+│  ├─ mobile/            # Expo 57 + React Native + TS (iOS + Android) — base F1
 │  └─ api/               # NestJS 12 (ESM) + Prisma — API REST
 ├─ packages/
 │  ├─ database/          # Schema Prisma (fuente de verdad) + migraciones SQL
