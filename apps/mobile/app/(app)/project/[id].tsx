@@ -1,11 +1,12 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { CenterLoader, colors, ErrorBanner, Screen, textStyles } from '../../../components/ui';
 import { SyncBar } from '../../../components/sync-indicator';
 import { api } from '../../../lib/api';
 import { errorMessage, useAuth } from '../../../lib/auth';
 import { getCachedProject, listLocalPhotos, upsertCachedProject } from '../../../lib/db';
+import { useSync } from '../../../lib/sync';
 import type { Project } from '../../../lib/types';
 
 export default function ProjectDetailScreen() {
@@ -17,6 +18,8 @@ export default function ProjectDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
   const [mediaCount, setMediaCount] = useState(0);
+  const { online } = useSync();
+  const prevOnlineRef = useRef(online);
 
   const load = useCallback(async () => {
     if (!token || !id) {
@@ -53,6 +56,15 @@ export default function ProjectDetailScreen() {
     }
   }, [token, id]);
 
+  // When connectivity comes back, refetch the project so the banner clears.
+  useEffect(() => {
+    const reconnected = online && !prevOnlineRef.current;
+    prevOnlineRef.current = online;
+    if (reconnected && offline) {
+      void load();
+    }
+  }, [online, offline, load]);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -87,7 +99,9 @@ export default function ProjectDetailScreen() {
           {offline ? (
             <View style={styles.offlineBanner}>
               <Text style={styles.offlineBannerText}>
-                Sin conexión: mostrando datos guardados. Puedes seguir tomando fotos.
+                {online
+                  ? 'No se pudo conectar al servidor: mostrando datos guardados. Reintentando…'
+                  : 'Sin conexión: mostrando datos guardados. Puedes seguir tomando fotos.'}
               </Text>
             </View>
           ) : null}

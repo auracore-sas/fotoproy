@@ -1,21 +1,24 @@
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { Button, CenterLoader, colors, ErrorBanner, Screen } from '../../components/ui';
 import { api, ApiError } from '../../lib/api';
 import { errorMessage, useAuth } from '../../lib/auth';
 import { listCachedProjects, replaceCachedProjects } from '../../lib/db';
+import { useSync } from '../../lib/sync';
 import type { Project } from '../../lib/types';
 
 export default function ProjectsScreen() {
   const router = useRouter();
   const { token, user, signOut } = useAuth();
+  const { online } = useSync();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // True when the server is unreachable and we are showing the local cache.
   const [offline, setOffline] = useState(false);
+  const prevOnlineRef = useRef(online);
 
   const load = useCallback(
     async (asRefresh = false) => {
@@ -52,6 +55,15 @@ export default function ProjectsScreen() {
     },
     [token],
   );
+
+  // When connectivity comes back, refetch so the cache fallback clears.
+  useEffect(() => {
+    const reconnected = online && !prevOnlineRef.current;
+    prevOnlineRef.current = online;
+    if (reconnected && offline) {
+      void load();
+    }
+  }, [online, offline, load]);
 
   // Reload whenever the screen regains focus (e.g. after creating a project).
   useFocusEffect(
@@ -105,8 +117,9 @@ export default function ProjectsScreen() {
       {offline ? (
         <View style={styles.offlineBanner}>
           <Text style={styles.offlineBannerText}>
-            Sin conexión: mostrando proyectos guardados. Los cambios de otros equipos se
-            actualizarán al reconectar.
+            {online
+              ? 'No se pudo conectar al servidor: mostrando proyectos guardados. Reintentando…'
+              : 'Sin conexión: mostrando proyectos guardados. Los cambios se actualizarán al reconectar.'}
           </Text>
         </View>
       ) : null}
