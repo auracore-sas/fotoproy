@@ -2,8 +2,9 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { Button, CenterLoader, colors, ErrorBanner, Screen } from '../../components/ui';
-import { api } from '../../lib/api';
+import { api, ApiError } from '../../lib/api';
 import { errorMessage, useAuth } from '../../lib/auth';
+import { listCachedProjects, replaceCachedProjects } from '../../lib/db';
 import type { Project } from '../../lib/types';
 
 export default function ProjectsScreen() {
@@ -13,6 +14,8 @@ export default function ProjectsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // True when the server is unreachable and we are showing the local cache.
+  const [offline, setOffline] = useState(false);
 
   const load = useCallback(
     async (asRefresh = false) => {
@@ -25,10 +28,22 @@ export default function ProjectsScreen() {
         setLoading(true);
       }
       setError(null);
+      setOffline(false);
       try {
         const page = await api.listProjects(token);
         setProjects(page.items);
+        // Keep the last known server snapshot for offline sessions.
+        void replaceCachedProjects(page.items);
       } catch (err) {
+        if (err instanceof ApiError && err.status === 0) {
+          // Offline: fall back to the cached project list (still tappable).
+          const cached = await listCachedProjects();
+          if (cached.length > 0) {
+            setProjects(cached as unknown as Project[]);
+            setOffline(true);
+            return;
+          }
+        }
         setError(errorMessage(err));
       } finally {
         setLoading(false);
@@ -87,6 +102,14 @@ export default function ProjectsScreen() {
       </View>
 
       <ErrorBanner message={error} />
+      {offline ? (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.offlineBannerText}>
+            Sin conexión: mostrando proyectos guardados. Los cambios de otros equipos se
+            actualizarán al reconectar.
+          </Text>
+        </View>
+      ) : null}
 
       {loading ? (
         <CenterLoader />
@@ -126,6 +149,15 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   logout: { paddingHorizontal: 10, paddingVertical: 6 },
   logoutText: { color: colors.danger, fontWeight: '600' },
+  offlineBanner: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 8,
+    marginHorizontal: 20,
+    marginBottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  offlineBannerText: { color: colors.primary, fontSize: 13, lineHeight: 18 },
   list: { paddingHorizontal: 20, paddingBottom: 24 },
   card: {
     backgroundColor: colors.surface,

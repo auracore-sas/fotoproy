@@ -5,7 +5,7 @@ import { CenterLoader, colors, ErrorBanner, Screen, textStyles } from '../../../
 import { SyncBar } from '../../../components/sync-indicator';
 import { api } from '../../../lib/api';
 import { errorMessage, useAuth } from '../../../lib/auth';
-import { listLocalPhotos } from '../../../lib/db';
+import { getCachedProject, listLocalPhotos, upsertCachedProject } from '../../../lib/db';
 import type { Project } from '../../../lib/types';
 
 export default function ProjectDetailScreen() {
@@ -15,6 +15,7 @@ export default function ProjectDetailScreen() {
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [offline, setOffline] = useState(false);
   const [mediaCount, setMediaCount] = useState(0);
 
   const load = useCallback(async () => {
@@ -23,10 +24,29 @@ export default function ProjectDetailScreen() {
     }
     setLoading(true);
     setError(null);
+    setOffline(false);
     try {
       const data = await api.getProject(token, id);
       setProject(data);
+      // Snapshot for offline sessions.
+      void upsertCachedProject(data);
     } catch (err) {
+      const cached = await getCachedProject(id);
+      if (cached) {
+        setProject({
+          id: cached.id,
+          code: cached.code,
+          name: cached.name,
+          description: cached.description,
+          clientName: cached.clientName,
+          latitude: cached.latitude,
+          longitude: cached.longitude,
+          organizationId: cached.organizationId,
+          createdAt: cached.createdAt ?? cached.updatedAt,
+        });
+        setOffline(true);
+        return;
+      }
       setError(errorMessage(err));
     } finally {
       setLoading(false);
@@ -64,6 +84,13 @@ export default function ProjectDetailScreen() {
       ) : project ? (
         <ScrollView contentContainerStyle={styles.padded}>
           <SyncBar />
+          {offline ? (
+            <View style={styles.offlineBanner}>
+              <Text style={styles.offlineBannerText}>
+                Sin conexión: mostrando datos guardados. Puedes seguir tomando fotos.
+              </Text>
+            </View>
+          ) : null}
           <Text style={textStyles.title}>{project.name}</Text>
           {project.description ? (
             <Text style={styles.description}>{project.description}</Text>
@@ -86,7 +113,16 @@ export default function ProjectDetailScreen() {
 
           <Pressable
             accessibilityRole="button"
-            onPress={() => router.push({ pathname: '/capture', params: { projectId: id } })}
+            onPress={() =>
+              router.push({
+                pathname: '/capture',
+                params: {
+                  projectId: id,
+                  projectCode: project.code,
+                  projectName: project.name,
+                },
+              })
+            }
             style={({ pressed }) => [styles.captureButton, pressed && { opacity: 0.85 }]}
           >
             <Text style={styles.captureButtonIcon}>📷</Text>
@@ -186,4 +222,12 @@ const styles = StyleSheet.create({
   galleryButtonIcon: { fontSize: 24, marginRight: 12 },
   galleryButtonTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
   galleryButtonSubtitle: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
+  offlineBanner: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 8,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  offlineBannerText: { color: colors.primary, fontSize: 13, lineHeight: 18 },
 });

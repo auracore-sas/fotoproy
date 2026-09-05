@@ -184,6 +184,7 @@ Orden sugerido (P0 = primero cuando se valide en campo):
 
 ## Registro de cambios
 
+- **v1.14 (2026-09-05):** UX offline corregido según prueba M2: la lista de proyectos y el detalle ahora caen a la **caché local** (`cached_projects`, migración local v5 con lat/lng/createdAt) cuando no hay red — sin error bloqueante, aviso azul “Sin conexión” y botones de cámara/galería operativos; la cámara muestra el nombre del proyecto vía params aunque esté offline.
 - **v1.13 (2026-09-05):** Fase 2 backend + móvil implementados: storage S3-compatible (F2.1–F2.3: MinIO local dev / R2 prod, pre-signed URLs, `POST /photos` idempotente org-scoped, thumbnails JPEG con sharp) y motor de sync offline-first (F2.5–F2.8: cola FIFO + backoff, subida directa, UI de pendientes, galería en línea del equipo). Pendiente: validación M2 en dispositivo real y despliegue F2.4 (requiere credenciales R2/dominio).
 - **v1.12 (2026-09-04):** cierre documental de la Fase 1 (M1): AGENTS.md y README actualizados al nuevo estado; tag `v0.1.0-m1`. Siguiente: Fase 2.
 - **v1.11 (2026-09-04):** F1.10 completada — galería local con fotos+videos, thumbnails de video (expo-video-thumbnails), visor fullscreen con expo-video y metadatos. **M1 logrado: foto con estampa visible en galería local.**

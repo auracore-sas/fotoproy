@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, isNotNull, isNull, lte, ne, notInArray, or } from 'drizzle-orm';
 import { db } from './database';
-import { photos, remotePhotos, syncQueue } from './schema';
+import { cachedProjects, photos, remotePhotos, syncQueue } from './schema';
 import type { MediaKind, SyncStatus } from './schema';
 import { generateId } from '../id';
 
@@ -216,6 +216,67 @@ export async function requeueFailed(): Promise<number> {
       .where(eq(syncQueue.status, 'FAILED'));
   }
   return rows.length;
+}
+
+/* ------------------------------------------------------------------ */
+/* Cached projects (offline list + detail, F1.6/F2)                    */
+/* ------------------------------------------------------------------ */
+
+export interface CachedProjectRow {
+  id: string;
+  code: string;
+  name: string;
+  clientName: string | null;
+  description: string | null;
+  organizationId: string;
+  latitude: number | null;
+  longitude: number | null;
+  createdAt: string | null;
+  updatedAt: string;
+}
+
+/** Server DTO shape (updatedAt is stamped locally on write). */
+export type CachedProjectInput = Omit<CachedProjectRow, 'updatedAt'>;
+
+/** Writes (or refreshes) the last known server shape of a project. */
+export async function upsertCachedProject(project: CachedProjectInput): Promise<void> {
+  const updatedAt = new Date().toISOString();
+  await db
+    .insert(cachedProjects)
+    .values({ ...project, updatedAt })
+    .onConflictDoUpdate({
+      target: cachedProjects.id,
+      set: {
+        code: project.code,
+        name: project.name,
+        clientName: project.clientName,
+        description: project.description,
+        organizationId: project.organizationId,
+        latitude: project.latitude,
+        longitude: project.longitude,
+        createdAt: project.createdAt,
+        updatedAt,
+      },
+    });
+}
+
+/** Upserts a whole page/collection (called after every successful fetch). */
+export async function replaceCachedProjects(projects: CachedProjectInput[]): Promise<void> {
+  for (const project of projects) {
+    await upsertCachedProject(project);
+  }
+}
+
+/** Cached projects, most recently seen first. */
+export async function listCachedProjects(): Promise<CachedProjectRow[]> {
+  const rows = await db.select().from(cachedProjects).orderBy(desc(cachedProjects.updatedAt));
+  return rows as unknown as CachedProjectRow[];
+}
+
+/** One cached project (detail screen fallback when offline). */
+export async function getCachedProject(id: string): Promise<CachedProjectRow | null> {
+  const rows = await db.select().from(cachedProjects).where(eq(cachedProjects.id, id)).limit(1);
+  return (rows[0] as unknown as CachedProjectRow | undefined) ?? null;
 }
 
 /* ------------------------------------------------------------------ */

@@ -70,6 +70,9 @@ export const cachedProjects = sqliteTable('cached_projects', {
   clientName: text('client_name'),
   description: text('description'),
   organizationId: text('organization_id').notNull(),
+  latitude: real('latitude'),
+  longitude: real('longitude'),
+  createdAt: text('created_at'),
   updatedAt: text('updated_at').notNull(),
 });
 

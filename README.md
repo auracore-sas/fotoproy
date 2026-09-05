@@ -10,10 +10,10 @@ FotoProy es una plataforma móvil (iOS + Android) para **capturar, almacenar, or
 
 ## Estado del proyecto
 
-| Estado            | Detalle                                                                                                        |
-| ----------------- | -------------------------------------------------------------------------------------------------------------- |
-| 📋 Especificación | ✅ **v2.1** — decisiones de producto y stack cerradas ([docs/SPEC.md](docs/SPEC.md))                           |
-| 🗺️ Planificación  | ✅ **ROADMAP creado** — 5 fases (F0–F4) hasta el MVP ([ROADMAP.md](ROADMAP.md))                                |
+| Estado            | Detalle                                                                                                                                 |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 📋 Especificación | ✅ **v2.1** — decisiones de producto y stack cerradas ([docs/SPEC.md](docs/SPEC.md))                                                    |
+| 🗺️ Planificación  | ✅ **ROADMAP creado** — 5 fases (F0–F4) hasta el MVP ([ROADMAP.md](ROADMAP.md))                                                         |
 | 💻 Código         | ✅ **Fase 1 (M1)** · ⏳ **Fase 2 implementada** — storage + pre-signed URLs + sync offline-first (pendiente validación M2 y despliegue) |
 
 > [!NOTE]

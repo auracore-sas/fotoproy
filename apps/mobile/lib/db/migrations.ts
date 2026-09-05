@@ -122,4 +122,14 @@ export const MIGRATIONS: LocalMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_remote_photos_project ON remote_photos(project_id);`,
     ],
   },
+  {
+    // v5 — richer project cache: coordinates + createdAt so the project
+    // detail screen works offline (same fields as the API DTO).
+    version: 5,
+    statements: [
+      `ALTER TABLE cached_projects ADD COLUMN latitude REAL;`,
+      `ALTER TABLE cached_projects ADD COLUMN longitude REAL;`,
+      `ALTER TABLE cached_projects ADD COLUMN created_at TEXT;`,
+    ],
+  },
 ];

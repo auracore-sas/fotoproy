@@ -18,7 +18,6 @@ import { errorMessage, useAuth } from '../../lib/auth';
 import { createLocalPhoto, enqueueSync } from '../../lib/db';
 import { generateId } from '../../lib/id';
 import { persistCapturedMedia } from '../../lib/media';
-import type { Project } from '../../lib/types';
 
 type FlashMode = 'off' | 'auto' | 'on';
 type CaptureMode = 'photo' | 'video';
@@ -60,13 +59,21 @@ function touchDistance(
 
 export default function CaptureScreen() {
   const router = useRouter();
-  const { projectId } = useLocalSearchParams<{ projectId: string }>();
+  const { projectId, projectCode, projectName } = useLocalSearchParams<{
+    projectId: string;
+    projectCode?: string;
+    projectName?: string;
+  }>();
   const { user, token } = useAuth();
   const [permission, requestPermission] = useCameraPermissions();
   const [, requestMicPermission] = useMicrophonePermissions();
   const cameraRef = useRef<CameraView | null>(null);
 
-  const [project, setProject] = useState<Project | null>(null);
+  // Project label for the stamp: from navigation params (offline) and then
+  // refreshed from the server when connectivity allows.
+  const [projectLabel, setProjectLabel] = useState<{ code: string; name: string } | null>(() =>
+    projectCode && projectName ? { code: projectCode, name: projectName } : null,
+  );
   const [mode, setMode] = useState<CaptureMode>('photo');
   const [flash, setFlash] = useState<FlashMode>('off');
   const [torch, setTorch] = useState(false);
@@ -163,7 +170,7 @@ export default function CaptureScreen() {
       try {
         const data = await api.getProject(token, projectId);
         if (mounted) {
-          setProject(data);
+          setProjectLabel({ code: data.code, name: data.name });
         }
       } catch {
         // Non-fatal: capture works even if the project fetch fails.
@@ -357,7 +364,9 @@ export default function CaptureScreen() {
     setRatio((current) => RATIOS[(RATIOS.indexOf(current) + 1) % RATIOS.length]);
   };
 
-  const projectLine = project ? `${project.code} · ${project.name}` : 'Cargando proyecto…';
+  const projectLine = projectLabel
+    ? `${projectLabel.code} · ${projectLabel.name}`
+    : 'Cargando proyecto…';
   const zoomFactor = 1 + zoom * 3; // approximate visual multiplier for the label
   const gpsLine =
     geo.status === 'ready' && geo.latitude != null
@@ -427,7 +436,7 @@ export default function CaptureScreen() {
         >
           <Text style={styles.iconText}>✕</Text>
         </Pressable>
-        <Text style={styles.topTitle}>{project ? project.code : 'Captura'}</Text>
+        <Text style={styles.topTitle}>{projectLabel ? projectLabel.code : 'Captura'}</Text>
         <View style={styles.topRight}>
           <Pressable
             onPress={() => setTorch((t) => !t)}
