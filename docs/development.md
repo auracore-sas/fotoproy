@@ -103,6 +103,9 @@ pnpm typecheck       # tsc --noEmit en todos los paquetes
 pnpm lint            # ESLint (debe quedar en 0)
 pnpm build           # compila todo en orden topológico
 pnpm format          # Prettier (correr antes de commit)
+
+# Descargar una foto almacenada (original + thumbnail) con URL firmada:
+pnpm photo:download <photoId> [carpetaSalida]
 ```
 
 Logs de la API en background: `tail -f /tmp/fotoproy-api.log`

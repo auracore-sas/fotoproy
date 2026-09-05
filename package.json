@@ -18,6 +18,7 @@
     "dev:mobile": "pnpm --filter @fotoproy/mobile start",
     "dev:up": "bash scripts/dev-up.sh",
     "dev:stop": "bash scripts/dev-stop.sh",
+    "photo:download": "node --env-file=apps/api/.env apps/api/scripts/download-photo.mjs",
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
     "db:migrate": "pnpm --filter @fotoproy/database db:migrate",
