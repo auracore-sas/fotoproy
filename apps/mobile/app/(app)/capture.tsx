@@ -26,12 +26,19 @@ type MediaKind = 'PHOTO' | 'VIDEO';
 
 const RATIOS: AspectRatio[] = ['4:3', '16:9', '1:1'];
 const MAX_VIDEO_SECONDS = 180;
+/** Extra wait (ms) for a GPS fix right at shutter time before saving. */
+const GPS_QUICK_TIMEOUT_MS = 1200;
+/** Background search timeout (ms) per attempt when there is no fix yet. */
+const GPS_SEEK_TIMEOUT_MS = 8000;
 
-interface GeoState {
-  status: 'idle' | 'loading' | 'ready' | 'denied' | 'error';
+interface GpsCoords {
   latitude: number | null;
   longitude: number | null;
   altitude: number | null;
+}
+
+interface GeoState extends GpsCoords {
+  status: 'idle' | 'loading' | 'ready' | 'denied' | 'error';
 }
 
 function formatClock(date: Date): string {
@@ -181,55 +188,73 @@ export default function CaptureScreen() {
     };
   }, [token, projectId]);
 
-  // Location permission + first GPS fix (optional, never blocks capture).
+  // Location permission + GPS fix loop (optional, NEVER blocks capture).
+  // Tries to get a fix on mount and keeps retrying in the background every few
+  // seconds until it succeeds — GPS does not need internet (satellite only),
+  // but a cold fix indoors/offline can take a while.
   useEffect(() => {
-    let mounted = true;
+    let cancelled = false;
     (async () => {
-      try {
-        const granted = await requestLocation();
-        if (!mounted) {
-          return;
+      const granted = await requestLocation();
+      if (cancelled) {
+        return;
+      }
+      if (!granted) {
+        setGeo({ status: 'denied', latitude: null, longitude: null, altitude: null });
+        return;
+      }
+      setGeo((g) => ({ ...g, status: 'loading' }));
+      const attempt = async (): Promise<boolean> => {
+        const fix = await grabFix(GPS_SEEK_TIMEOUT_MS);
+        if (cancelled) {
+          return true;
         }
-        if (!granted) {
-          setGeo({ status: 'denied', latitude: null, longitude: null, altitude: null });
-          return;
+        if (fix) {
+          return true;
         }
-        setGeo((g) => ({ ...g, status: 'loading' }));
-        const position = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        if (mounted) {
-          setGeo({
-            status: 'ready',
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            altitude: position.coords.altitude,
-          });
-        }
-      } catch {
-        if (mounted) {
-          setGeo({ status: 'error', latitude: null, longitude: null, altitude: null });
-        }
+        setGeo((g) =>
+          g.latitude != null && g.longitude != null
+            ? g // keep a previous fix if we ever had one
+            : { status: 'error', latitude: null, longitude: null, altitude: null },
+        );
+        return false;
+      };
+      let done = await attempt();
+      while (!done && !cancelled) {
+        await new Promise((resolve) => setTimeout(resolve, GPS_SEEK_TIMEOUT_MS));
+        done = await attempt();
       }
     })();
     return () => {
-      mounted = false;
+      cancelled = true;
     };
   }, []);
 
-  const refreshGps = async (): Promise<void> => {
+  /**
+   * Tries once to obtain a GPS fix within `timeoutMs`. Updates the live state
+   * on success and returns the coordinates (or null). Used both by the
+   * background loop and by the short “wait at shutter” attempt.
+   */
+  const grabFix = async (
+    timeoutMs: number,
+  ): Promise<{ latitude: number; longitude: number; altitude: number | null } | null> => {
     try {
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      setGeo({
-        status: 'ready',
+      const position = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+      ]);
+      if (!position) {
+        return null;
+      }
+      const fix = {
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
-        altitude: position.coords.altitude,
-      });
+        altitude: position.coords.altitude ?? null,
+      };
+      setGeo({ status: 'ready', ...fix });
+      return fix;
     } catch {
-      // Keep the previous fix.
+      return null;
     }
   };
 
@@ -246,12 +271,14 @@ export default function CaptureScreen() {
     kind: MediaKind,
     sourceUri: string,
     capturedAt: string,
+    coords: GpsCoords,
     durationMs?: number,
   ): Promise<void> => {
     try {
       const mediaId = generateId();
       const extension = kind === 'VIDEO' ? 'mp4' : 'jpg';
       const localUri = await persistCapturedMedia(sourceUri, mediaId, extension);
+      const hasGps = coords.latitude != null && coords.longitude != null;
       await createLocalPhoto({
         id: mediaId,
         projectId,
@@ -259,9 +286,9 @@ export default function CaptureScreen() {
         kind,
         durationMs: durationMs ?? null,
         localUri,
-        latitude: geo.latitude,
-        longitude: geo.longitude,
-        altitude: geo.altitude,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        altitude: coords.altitude,
         capturedAt,
       });
       await enqueueSync('photo', mediaId, {
@@ -270,17 +297,39 @@ export default function CaptureScreen() {
         kind,
         durationMs: durationMs ?? null,
         capturedAt,
-        latitude: geo.latitude,
-        longitude: geo.longitude,
-        altitude: geo.altitude,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        altitude: coords.altitude,
       });
       const count = savedCount + 1;
       setSavedCount(count);
       const label = kind === 'VIDEO' ? 'Video guardado' : 'Foto guardada';
-      showToast(`✓ ${label}${count > 1 ? ` (${count})` : ''}`);
+      showToast(
+        `✓ ${label}${count > 1 ? ` (${count})` : ''}${hasGps ? ' · 📍 con GPS' : ' · sin GPS'}`,
+      );
     } catch (error) {
       Alert.alert('Error al guardar', errorMessage(error));
     }
+  };
+
+  /**
+   * Coordinates for the media about to be saved: uses the current fix, or —
+   * only when there is none yet and the permission exists — waits a short
+   * moment for one so burst captures rarely end up without GPS.
+   */
+  const resolveGpsForShot = async (): Promise<GpsCoords> => {
+    if (geo.status === 'ready' && geo.latitude != null) {
+      return { latitude: geo.latitude, longitude: geo.longitude, altitude: geo.altitude };
+    }
+    if (geo.status === 'denied') {
+      return { latitude: null, longitude: null, altitude: null };
+    }
+    const fix = await grabFix(GPS_QUICK_TIMEOUT_MS);
+    if (fix) {
+      return fix;
+    }
+    // Keep whatever partial state we have (usually nothing).
+    return { latitude: geo.latitude, longitude: geo.longitude, altitude: geo.altitude };
   };
 
   /** Burst photo capture: saves automatically and keeps the camera active. */
@@ -295,8 +344,8 @@ export default function CaptureScreen() {
         quality: 0.7,
         shutterSound: !muted, // iOS honors this; Android follows the system volume
       });
-      void refreshGps();
-      await storeMedia('PHOTO', result.uri, new Date().toISOString());
+      const coords = await resolveGpsForShot();
+      await storeMedia('PHOTO', result.uri, new Date().toISOString(), coords);
     } catch {
       Alert.alert('Error', 'No se pudo capturar la foto. Intenta de nuevo.');
     } finally {
@@ -322,6 +371,8 @@ export default function CaptureScreen() {
     busyRef.current = true;
     startedAtRef.current = Date.now();
     setRecordSeconds(0);
+    // Warm up GPS while recording so the video usually saves with coordinates.
+    void grabFix(GPS_SEEK_TIMEOUT_MS);
     const promise = cameraRef.current.recordAsync({ maxDuration: MAX_VIDEO_SECONDS });
     recordPromiseRef.current = promise;
     setRecording(true);
@@ -334,11 +385,12 @@ export default function CaptureScreen() {
         }
         const durationMs = Date.now() - startedAtRef.current;
         setRecording(false);
-        void refreshGps();
+        const coords = await resolveGpsForShot();
         await storeMedia(
           'VIDEO',
           result.uri,
           new Date(startedAtRef.current).toISOString(),
+          coords,
           durationMs,
         );
       })
@@ -368,11 +420,22 @@ export default function CaptureScreen() {
     ? `${projectLabel.code} · ${projectLabel.name}`
     : 'Cargando proyecto…';
   const zoomFactor = 1 + zoom * 3; // approximate visual multiplier for the label
-  const gpsLine =
-    geo.status === 'ready' && geo.latitude != null
-      ? `📍 ${geo.latitude.toFixed(6)}, ${geo.longitude?.toFixed(6) ?? '-'}` +
-        (geo.altitude != null ? ` · ${Math.round(geo.altitude)} m` : '')
-      : '📍 GPS no disponible';
+  const gpsReady = geo.status === 'ready' && geo.latitude != null && geo.longitude != null;
+  const gpsLine = gpsReady
+    ? `📍 ${geo.latitude!.toFixed(6)}, ${geo.longitude!.toFixed(6)}` +
+      (geo.altitude != null ? ` · ${Math.round(geo.altitude)} m` : '')
+    : geo.status === 'denied'
+      ? '📍 Ubicación sin permiso'
+      : geo.status === 'error'
+        ? '📍 GPS sin señal'
+        : '📍 Buscando señal GPS…';
+  const gpsHint = gpsReady
+    ? null
+    : geo.status === 'denied'
+      ? 'Las fotos se guardarán sin coordenadas hasta que actives la ubicación en ajustes.'
+      : geo.status === 'error'
+        ? 'La foto se guardará igual, pero sin coordenadas hasta que haya señal GPS.'
+        : 'Puedes capturar igual: al disparar se intenta por un instante.';
   const stampLines = [`🏗️ ${projectLine}`, `👤 ${user?.fullName ?? ''}`, gpsLine];
   const formatTimer = `${String(Math.floor(recordSeconds / 60)).padStart(2, '0')}:${String(
     recordSeconds % 60,
@@ -499,10 +562,7 @@ export default function CaptureScreen() {
             {line}
           </Text>
         ))}
-        {geo.status === 'loading' ? <Text style={styles.stampHint}>Obteniendo GPS…</Text> : null}
-        {geo.status === 'denied' ? (
-          <Text style={styles.stampHint}>Sin permiso de ubicación: la foto irá sin GPS.</Text>
-        ) : null}
+        {gpsHint ? <Text style={styles.stampHint}>{gpsHint}</Text> : null}
       </View>
 
       {/* Aspect ratio control (left) */}
