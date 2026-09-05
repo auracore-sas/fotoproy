@@ -92,10 +92,12 @@
 
 ### Móvil — motor de sincronización
 
-- [ ] **F2.5** **Detector de conectividad** (NetInfo/expo-network) + procesador de cola: procesa `sync_queue` en orden FIFO cuando hay red; al fallar, **backoff exponencial** y reintento automático.
-- [ ] **F2.6** **Sync de fotos**: pedir pre-signed URL → subir archivo a R2 (PUT con el URI local, sin base64 gigante) → `POST /photos` con metadatos → marcar `DONE`. Reintentos idempotentes (mismo UUID cliente).
-- [ ] **F2.7** **UI de estado**: indicador global de pendientes (ej. "3 fotos por subir"), acción "sincronizar ahora", estados por foto (local → subiendo → en línea / error).
-- [ ] **F2.8** Descarga de metadatos/thumbnails para galería en línea (caché local de lo ya visto).
+> ✅ **F2.5–F2.8 implementado (2026-09-05)**: motor de sync offline-first (NetInfo + cola FIFO SQLite con backoff exponencial y reintento automático, estado superviviente a reinicios), subida directa del archivo local a storage vía pre-signed URL (sin base64 en memoria) → `POST /photos` idempotente → `DONE`; 401 pausa el motor con aviso; 409 se confirma por `GET /photos/:id` (cero duplicados). UI: barra global de pendientes + “Sincronizar ahora”, badges por foto (pendiente/subiendo/error) en la galería, y caché de la galería en línea del equipo (thumbnails descargados, visor con URL firmada fresca). _Pendiente: validación en dispositivo real del DoD M2 (modo avión → reconexión) y F2.4 (despliegue, requiere dominio/credenciales R2 reales)._
+
+- [x] **F2.5** **Detector de conectividad** (NetInfo/expo-network) + procesador de cola: procesa `sync_queue` en orden FIFO cuando hay red; al fallar, **backoff exponencial** y reintento automático.
+- [x] **F2.6** **Sync de fotos**: pedir pre-signed URL → subir archivo a R2 (PUT con el URI local, sin base64 gigante) → `POST /photos` con metadatos → marcar `DONE`. Reintentos idempotentes (mismo UUID cliente).
+- [x] **F2.7** **UI de estado**: indicador global de pendientes (ej. “3 fotos por subir”), acción “sincronizar ahora”, estados por foto (local → subiendo → en línea / error).
+- [x] **F2.8** Descarga de metadatos/thumbnails para galería en línea (caché local de lo ya visto).
 
 **DoD F2:** con el móvil en modo avión: capturar N fotos → todas aparecen "pendientes" → al quitar modo avión se suben solas en orden y el servidor las lista sin duplicados.
 
@@ -182,6 +184,7 @@ Orden sugerido (P0 = primero cuando se valide en campo):
 
 ## Registro de cambios
 
+- **v1.13 (2026-09-05):** Fase 2 backend + móvil implementados: storage S3-compatible (F2.1–F2.3: MinIO local dev / R2 prod, pre-signed URLs, `POST /photos` idempotente org-scoped, thumbnails JPEG con sharp) y motor de sync offline-first (F2.5–F2.8: cola FIFO + backoff, subida directa, UI de pendientes, galería en línea del equipo). Pendiente: validación M2 en dispositivo real y despliegue F2.4 (requiere credenciales R2/dominio).
 - **v1.12 (2026-09-04):** cierre documental de la Fase 1 (M1): AGENTS.md y README actualizados al nuevo estado; tag `v0.1.0-m1`. Siguiente: Fase 2.
 - **v1.11 (2026-09-04):** F1.10 completada — galería local con fotos+videos, thumbnails de video (expo-video-thumbnails), visor fullscreen con expo-video y metadatos. **M1 logrado: foto con estampa visible en galería local.**
 - **v1.10 (2026-09-04):** ✅ pruebas en dispositivo Android: fotos en ráfaga, zoom por pellizco, linterna, relación de aspecto y **video con audio** funcionando (requiere permiso de micrófono; si se niega, graba sin audio).

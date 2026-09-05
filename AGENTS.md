@@ -17,7 +17,7 @@
 | [README.md](README.md)       | Inicio rápido + comandos.                                                                                                    |
 | [AGENTS.md](AGENTS.md)       | Este archivo: reglas y flujos.                                                                                               |
 
-**Estado actual:** Fase 0 ✅ (M0) · **Fase 1 ✅ (M1)** — backend (auth JWT, roles, membresías, CRUD projects) y móvil completo: sesión, cámara con estampa GPS (ráfaga, zoom pinch, linterna, video corto), BD local SQLite + Drizzle con `sync_queue`, galería local de fotos/videos. **Siguiente: Fase 2** (R2 + pre-signed URLs + endpoint photos + motor de sync). Ver ROADMAP para detalle.
+**Estado actual:** Fase 0 ✅ (M0) · **Fase 1 ✅ (M1)** — backend (auth JWT, roles, membresías, CRUD projects) y móvil completo: sesión, cámara con estampa GPS (ráfaga, zoom pinch, linterna, video corto), BD local SQLite + Drizzle con `sync_queue`, galería local de fotos/videos. **Fase 2 ⏳ implementada (backend + móvil) — pendiente validación M2 en dispositivo y despliegue F2.4**: storage S3-compatible (MinIO dev / Cloudflare R2 prod) con pre-signed URLs, endpoints `photos` (idempotentes, org-scoped) con thumbnails JPEG (sharp), motor de sync offline-first (FIFO + backoff, NetInfo, UI de pendientes, galería en línea del equipo). Ver ROADMAP para detalle.
 
 ---
 
@@ -149,14 +149,14 @@ cd packages/database
 
 ---
 
-## 8. Fase 2 (próxima) — qué viene y cómo arrancar
+## 8. Fase 2 (en curso) — qué queda y cómo validar
 
-Ver tareas F2.1–F2.8 del ROADMAP. Resumen:
+Ver tareas F2.1–F2.8 del ROADMAP. **Implementado** (commits a05192a → 57f7786):
 
-- **Backend/archivos**: buckets Cloudflare R2 + servicio de **pre-signed URLs**; endpoint `POST /photos` (metadatos + `storageKey`, idempotente por UUID cliente; soporta `kind PHOTO/VIDEO` + `durationMs`) y `GET /photos` (paginado con thumbnails); procesado de thumbnails (sharp).
-- **Despliegue básico**: API contenedorizada + Postgres gestionado + R2 + dominio/SSL + CI mínimo.
-- **Móvil — motor de sync**: detector de conectividad, procesador FIFO de `sync_queue` con backoff exponencial, subida directa a R2 (pre-signed) + `POST /photos`, indicador de pendientes en la UI.
-- `apps/mobile` YA existe y tiene script `typecheck`: mantenerlo en verde junto al resto (`pnpm -r typecheck`).
+- **Backend/archivos**: servicio de storage S3-compatible (mismo código para Cloudflare R2 y MinIO local vía envs `STORAGE_*`; bucket + CORS bootstrap) con **pre-signed PUT/GET**; migración `photos` → `storageKey`/`thumbnailStorageKey`; endpoints `POST /photos/presign`, `POST /photos` (idempotente por UUID cliente, valida clave esperada y org-scoping), `GET /photos?projectId`, `GET /photos/:id`; thumbnails **JPEG** con sharp (inline async + sweep 5 min; JPEG por compatibilidad RN-iOS, no WebP).
+- **Móvil — motor de sync**: NetInfo + cola FIFO SQLite (`next_attempt_at`/`last_error`), backoff exponencial con reintento automático, subida binaria directa (expo-file-system legacy, sin base64) → `POST /photos` → `DONE`; 401 pausa, 409 se confirma por GET; UI SyncBar + badges; caché de galería en línea (migración local v4).
+- **Pendiente**: validación M2 en dispositivo real (modo avión → captura → reconexión) y **F2.4 despliegue** (API contenedorizada + Postgres gestionado + R2 real + dominio/SSL; requiere credenciales R2 y dominio del usuario).
+- `apps/mobile` tiene script `typecheck`: mantenerlo en verde junto al resto (`pnpm -r typecheck`).
 
 ---
 

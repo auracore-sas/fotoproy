@@ -14,7 +14,7 @@ FotoProy es una plataforma móvil (iOS + Android) para **capturar, almacenar, or
 | ----------------- | -------------------------------------------------------------------------------------------------------------- |
 | 📋 Especificación | ✅ **v2.1** — decisiones de producto y stack cerradas ([docs/SPEC.md](docs/SPEC.md))                           |
 | 🗺️ Planificación  | ✅ **ROADMAP creado** — 5 fases (F0–F4) hasta el MVP ([ROADMAP.md](ROADMAP.md))                                |
-| 💻 Código         | ✅ **Fase 1 completada (M1)** — API auth/proyectos + app móvil con captura y galería local · siguiente: Fase 2 |
+| 💻 Código         | ✅ **Fase 1 (M1)** · ⏳ **Fase 2 implementada** — storage + pre-signed URLs + sync offline-first (pendiente validación M2 y despliegue) |
 
 > [!NOTE]
 > Proyecto en desarrollo — la Fase 0 (fundación del monorepo) está lista. El estado por fases vive en el [ROADMAP](ROADMAP.md).
@@ -59,7 +59,7 @@ _El esquema de base de datos detallado en la SPEC es informativo; la fuente de v
 ```
 fotoproy/
 ├─ apps/
-│  ├─ mobile/            # Expo 57 + React Native + TS (iOS + Android) — Fase 1: captura + galería local
+│  ├─ mobile/            # Expo 57 + RN + TS (iOS + Android) — F1 cámara/BD local · F2 sync offline
 │  └─ api/               # NestJS 12 (ESM) + Prisma — API REST
 ├─ packages/
 │  ├─ database/          # Schema Prisma (fuente de verdad) + migraciones SQL
