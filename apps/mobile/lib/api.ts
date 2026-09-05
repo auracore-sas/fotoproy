@@ -3,7 +3,17 @@
  * Base URL comes from EXPO_PUBLIC_API_URL (see .env) so it can be switched
  * per environment without rebuilding.
  */
-import type { AuthResponse, CreateProjectPayload, Page, Project, UserInfo } from './types';
+import type {
+  AuthResponse,
+  CreatePhotoPayload,
+  CreateProjectPayload,
+  Page,
+  Photo,
+  PresignPhotoUploadPayload,
+  PresignUploadResponse,
+  Project,
+  UserInfo,
+} from './types';
 
 export const API_URL: string = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.86.35:4100';
 
@@ -87,5 +97,25 @@ export const api = {
 
   createProject(token: string, payload: CreateProjectPayload): Promise<Project> {
     return request('/projects', { method: 'POST', token, body: payload });
+  },
+
+  presignPhotoUpload(
+    token: string,
+    payload: PresignPhotoUploadPayload,
+  ): Promise<PresignUploadResponse> {
+    return request('/photos/presign', { method: 'POST', token, body: payload });
+  },
+
+  /** Registers a media item already uploaded to storage (idempotent by id). */
+  createPhoto(token: string, payload: CreatePhotoPayload): Promise<Photo> {
+    return request('/photos', { method: 'POST', token, body: payload });
+  },
+
+  listPhotos(token: string, projectId: string, page = 1): Promise<Page<Photo>> {
+    return request(`/photos?projectId=${projectId}&page=${page}&pageSize=20`, { token });
+  },
+
+  getPhoto(token: string, id: string): Promise<Photo> {
+    return request(`/photos/${id}`, { token });
   },
 };

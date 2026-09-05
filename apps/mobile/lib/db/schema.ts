@@ -85,5 +85,7 @@ export const syncQueue = sqliteTable('sync_queue', {
     .notNull()
     .default('PENDING'),
   attempts: integer('attempts').notNull().default(0),
+  nextAttemptAt: text('next_attempt_at'), // ISO UTC — retries scheduled after this
+  lastError: text('last_error'), // last failure message (UI diagnostics)
   createdAt: text('created_at').notNull(),
 });

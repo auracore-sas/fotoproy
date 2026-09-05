@@ -92,4 +92,13 @@ export const MIGRATIONS: LocalMigration[] = [
       `ALTER TABLE photos ADD COLUMN duration_ms INTEGER;`,
     ],
   },
+  {
+    // v3 — sync queue retry bookkeeping: exponential backoff scheduling and
+    // the last error message (kept for the UI / diagnostics).
+    version: 3,
+    statements: [
+      `ALTER TABLE sync_queue ADD COLUMN next_attempt_at TEXT;`,
+      `ALTER TABLE sync_queue ADD COLUMN last_error TEXT;`,
+    ],
+  },
 ];

@@ -48,3 +48,53 @@ export interface CreateProjectPayload {
   latitude?: number | null;
   longitude?: number | null;
 }
+
+export type MediaKind = 'PHOTO' | 'VIDEO';
+
+/** MIME types accepted for direct (pre-signed) uploads — mirror of shared. */
+export type UploadableMediaType =
+  'image/jpeg' | 'image/png' | 'image/webp' | 'image/heic' | 'video/mp4';
+
+export interface PresignPhotoUploadPayload {
+  /** Client UUID of the media item (also used as the object name). */
+  id: string;
+  projectId: string;
+  contentType: UploadableMediaType;
+}
+
+export interface PresignUploadResponse {
+  storageKey: string;
+  uploadUrl: string;
+  contentType: UploadableMediaType;
+  expiresIn: number;
+}
+
+export interface CreatePhotoPayload {
+  id: string;
+  projectId: string;
+  kind?: MediaKind;
+  durationMs?: number;
+  storageKey: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  altitude?: number | null;
+  notes?: string;
+  capturedAt: string;
+}
+
+export interface Photo {
+  id: string;
+  projectId: string;
+  userId: string | null;
+  kind: MediaKind;
+  durationMs: number | null;
+  /** Short-lived signed URL to the original media (refresh when expired). */
+  imageUrl: string;
+  thumbnailUrl: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  altitude: number | null;
+  notes: string | null;
+  capturedAt: string;
+  syncedAt: string;
+}

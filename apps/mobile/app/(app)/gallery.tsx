@@ -11,7 +11,10 @@ import {
   View,
 } from 'react-native';
 import { CenterLoader, colors, ErrorBanner, Screen } from '../../components/ui';
+import { SyncBar } from '../../components/sync-indicator';
 import { listLocalPhotos } from '../../lib/db';
+import { useSync } from '../../lib/sync';
+import type { ItemSyncState } from '../../lib/sync';
 
 interface MediaRow {
   id: string;
@@ -19,6 +22,7 @@ interface MediaRow {
   durationMs: number | null;
   localUri: string;
   capturedAt: string;
+  syncedAt: string | null;
   latitude: number | null;
   longitude: number | null;
 }
@@ -39,6 +43,7 @@ export default function GalleryScreen() {
   const [error, setError] = useState<string | null>(null);
   const [videoThumbs, setVideoThumbs] = useState<Record<string, string>>({});
   const thumbCache = useRef<Record<string, string>>({});
+  const sync = useSync();
 
   const load = useCallback(async () => {
     if (!projectId) {
@@ -102,9 +107,22 @@ export default function GalleryScreen() {
     router.push({ pathname: '/media-viewer', params: { mediaId: item.id } });
   };
 
+  const syncBadge = (item: MediaRow): { state: ItemSyncState | 'SYNCED'; label: string } => {
+    const queueState = sync.items[item.id];
+    if (queueState) {
+      return {
+        state: queueState,
+        label: queueState === 'FAILED' ? '⚠' : queueState === 'UPLOADING' ? '…' : '⏫',
+      };
+    }
+    return { state: 'SYNCED', label: '' };
+  };
+
   const renderItem = ({ item }: { item: MediaRow }) => {
     const isVideo = item.kind === 'VIDEO';
     const thumbUri = isVideo ? videoThumbs[item.id] : item.localUri;
+    const badge = syncBadge(item);
+    const isSynced = badge.state === 'SYNCED' && item.syncedAt != null;
     return (
       <Pressable
         accessibilityRole="button"
@@ -125,6 +143,21 @@ export default function GalleryScreen() {
             <Text style={styles.videoDuration}>{formatDuration(item.durationMs)}</Text>
           </View>
         ) : null}
+        {!isSynced ? (
+          <View
+            pointerEvents="none"
+            accessibilityLabel={
+              badge.state === 'FAILED' ? 'Error al sincronizar' : 'Por sincronizar'
+            }
+            style={[styles.syncBadge, badge.state === 'FAILED' && styles.syncBadgeError]}
+          >
+            {badge.state === 'UPLOADING' ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.syncBadgeIcon}>{badge.label}</Text>
+            )}
+          </View>
+        ) : null}
       </Pressable>
     );
   };
@@ -136,6 +169,7 @@ export default function GalleryScreen() {
   return (
     <Screen>
       <ErrorBanner message={error} />
+      <SyncBar />
       <FlatList
         data={items}
         keyExtractor={(item) => item.id}
@@ -181,6 +215,20 @@ const styles = StyleSheet.create({
   },
   videoIcon: { color: '#FFFFFF', fontSize: 11 },
   videoDuration: { color: '#FFFFFF', fontSize: 11, fontWeight: '600' },
+  syncBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  syncBadgeIcon: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
+  syncBadgeError: { backgroundColor: '#DC2626' },
   empty: { alignItems: 'center', paddingTop: 100, paddingHorizontal: 28 },
   emptyTitle: { fontSize: 17, fontWeight: '600', color: colors.text },
   emptyText: { fontSize: 14, color: colors.textMuted, marginTop: 6, textAlign: 'center' },

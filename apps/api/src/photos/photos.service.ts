@@ -146,10 +146,7 @@ export class PhotosService {
   }
 
   /** Lists the org's photos of a project (paginated). */
-  async list(
-    current: AuthedUser,
-    query: PhotoListQuery,
-  ): Promise<Page<PhotoDto>> {
+  async list(current: AuthedUser, query: PhotoListQuery): Promise<Page<PhotoDto>> {
     await this.requireProject(current.organizationId, query.projectId);
     const where = {
       projectId: query.projectId,

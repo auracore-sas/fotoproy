@@ -1,4 +1,4 @@
-import { desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, isNull, lte, ne, or } from 'drizzle-orm';
 import { db } from './database';
 import { photos, syncQueue } from './schema';
 import type { MediaKind, SyncStatus } from './schema';
@@ -76,7 +76,17 @@ export interface SyncQueueItem {
   payload: unknown;
   status: SyncStatus;
   attempts: number;
+  nextAttemptAt: string | null;
+  lastError: string | null;
   createdAt: string;
+}
+
+/** Auto-retry policy: exponential backoff, then give up until manual retry. */
+export const MAX_SYNC_ATTEMPTS = 6;
+
+/** Backoff delay in ms after `failures` consecutive failures. */
+export function backoffDelayMs(failures: number): number {
+  return Math.min(1000 * 2 ** failures, 60_000);
 }
 
 /** Enqueues an append-only operation to be synced when connectivity returns. */
@@ -92,18 +102,36 @@ export async function enqueueSync(
     payload: JSON.stringify(payload),
     status: 'PENDING' as const,
     attempts: 0,
+    nextAttemptAt: null,
+    lastError: null,
     createdAt: new Date().toISOString(),
   };
   await db.insert(syncQueue).values(item);
   return { ...item, payload };
 }
 
-export async function listPendingSync(limit = 50): Promise<SyncQueueItem[]> {
+/**
+ * Next item to upload (FIFO by createdAt): pending items first, then failed
+ * items whose backoff window has elapsed.
+ */
+export async function listNextPendingSync(limit = 20): Promise<SyncQueueItem[]> {
+  const now = new Date().toISOString();
   const rows = await db
     .select()
     .from(syncQueue)
-    .where(eq(syncQueue.status, 'PENDING'))
-    .orderBy(desc(syncQueue.createdAt))
+    .where(
+      and(
+        or(
+          eq(syncQueue.status, 'PENDING'),
+          and(
+            eq(syncQueue.status, 'FAILED'),
+            isNotNull(syncQueue.nextAttemptAt),
+            lte(syncQueue.nextAttemptAt, now),
+          ),
+        ),
+      ),
+    )
+    .orderBy(asc(syncQueue.createdAt))
     .limit(limit);
   return rows.map((row) => ({
     ...row,
@@ -112,31 +140,80 @@ export async function listPendingSync(limit = 50): Promise<SyncQueueItem[]> {
   }));
 }
 
+/** Number of items waiting to be uploaded (pending, in-flight or failed). */
 export async function countPendingSync(): Promise<number> {
   const rows = await db
     .select({ count: syncQueue.id })
     .from(syncQueue)
-    .where(eq(syncQueue.status, 'PENDING'));
+    .where(ne(syncQueue.status, 'DONE'));
   return rows.length;
 }
 
-export async function updateSyncStatus(
+/** Per-entity sync state map for UI badges (keyed by entity client uuid). */
+export async function listQueueItemStates(): Promise<
+  Array<{ entityId: string; status: SyncStatus }>
+> {
+  const rows = await db
+    .select({ entityId: syncQueue.entityId, status: syncQueue.status })
+    .from(syncQueue)
+    .where(ne(syncQueue.status, 'DONE'));
+  return rows.map((row) => ({ entityId: row.entityId, status: row.status }));
+}
+
+/** Marks an item as in-flight (upload started). */
+export async function markSyncUploading(queueId: string): Promise<void> {
+  await db.update(syncQueue).set({ status: 'UPLOADING' }).where(eq(syncQueue.id, queueId));
+}
+
+/**
+ * Records a failed attempt with exponential backoff. After MAX_SYNC_ATTEMPTS
+ * the item stops being auto-retried (nextAttemptAt = null) until a manual
+ * retry resets it.
+ */
+export async function markSyncFailed(
   queueId: string,
-  status: SyncStatus,
-  attempts?: number,
+  message: string,
+  failures: number,
 ): Promise<void> {
-  if (status === 'DONE') {
-    // Completed items are removed from the queue (append-only log is the server).
-    await db.delete(syncQueue).where(eq(syncQueue.id, queueId));
-    return;
-  }
-  const current = await db.select().from(syncQueue).where(eq(syncQueue.id, queueId)).limit(1);
-  const row = current[0];
-  if (!row) {
-    return;
-  }
+  const nextAttemptAt =
+    failures >= MAX_SYNC_ATTEMPTS
+      ? null
+      : new Date(Date.now() + backoffDelayMs(failures)).toISOString();
   await db
     .update(syncQueue)
-    .set({ status, attempts: attempts ?? row.attempts + 1 })
+    .set({ status: 'FAILED', attempts: failures, nextAttemptAt, lastError: message })
     .where(eq(syncQueue.id, queueId));
+}
+
+/** Removes the queue item after a successful sync (the server keeps the log). */
+export async function completeSyncItem(queueId: string): Promise<void> {
+  await db.delete(syncQueue).where(eq(syncQueue.id, queueId));
+}
+
+/** Drops a queue item that can never succeed (bad payload / unsupported). */
+export async function dropSyncItem(queueId: string): Promise<void> {
+  await db.delete(syncQueue).where(eq(syncQueue.id, queueId));
+}
+
+/**
+ * Resets items stuck in UPLOADING (e.g. the app was killed mid-upload) back
+ * to PENDING so they are retried on the next run.
+ */
+export async function resetStaleUploading(): Promise<void> {
+  await db.update(syncQueue).set({ status: 'PENDING' }).where(eq(syncQueue.status, 'UPLOADING'));
+}
+
+/** Resets failed items for an explicit “sync now” (clears attempts/backoff). */
+export async function requeueFailed(): Promise<number> {
+  const rows = await db
+    .select({ id: syncQueue.id })
+    .from(syncQueue)
+    .where(eq(syncQueue.status, 'FAILED'));
+  if (rows.length > 0) {
+    await db
+      .update(syncQueue)
+      .set({ status: 'PENDING', attempts: 0, nextAttemptAt: null, lastError: null })
+      .where(eq(syncQueue.status, 'FAILED'));
+  }
+  return rows.length;
 }

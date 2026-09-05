@@ -2,6 +2,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { CenterLoader, colors, ErrorBanner, Screen, textStyles } from '../../../components/ui';
+import { SyncBar } from '../../../components/sync-indicator';
 import { api } from '../../../lib/api';
 import { errorMessage, useAuth } from '../../../lib/auth';
 import { listLocalPhotos } from '../../../lib/db';
@@ -62,6 +63,7 @@ export default function ProjectDetailScreen() {
         </View>
       ) : project ? (
         <ScrollView contentContainerStyle={styles.padded}>
+          <SyncBar />
           <Text style={textStyles.title}>{project.name}</Text>
           {project.description ? (
             <Text style={styles.description}>{project.description}</Text>
