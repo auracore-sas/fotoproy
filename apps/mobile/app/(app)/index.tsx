@@ -18,7 +18,7 @@ export default function ProjectsScreen() {
   const [error, setError] = useState<string | null>(null);
   // True when the server is unreachable and we are showing the local cache.
   const [offline, setOffline] = useState(false);
-  const prevOnlineRef = useRef(online);
+  const retryBusyRef = useRef(false);
 
   const load = useCallback(
     async (asRefresh = false) => {
@@ -56,14 +56,34 @@ export default function ProjectsScreen() {
     [token],
   );
 
-  // When connectivity comes back, refetch so the cache fallback clears.
-  useEffect(() => {
-    const reconnected = online && !prevOnlineRef.current;
-    prevOnlineRef.current = online;
-    if (reconnected && offline) {
-      void load();
+  // Silent refetch (no loader flicker): flips state only when the server answers.
+  const refreshListSilently = useCallback(async () => {
+    if (!token || retryBusyRef.current) {
+      return;
     }
-  }, [online, offline, load]);
+    retryBusyRef.current = true;
+    try {
+      const page = await api.listProjects(token);
+      setProjects(page.items);
+      void replaceCachedProjects(page.items);
+      setOffline(false);
+    } catch {
+      // Server still unreachable — keep showing the cached list + banner.
+    } finally {
+      retryBusyRef.current = false;
+    }
+  }, [token]);
+
+  // While showing cached data with connectivity, retry periodically until the
+  // server responds (a single retry can race the network coming back).
+  useEffect(() => {
+    if (!offline || !online) {
+      return undefined;
+    }
+    void refreshListSilently();
+    const timer = setInterval(() => void refreshListSilently(), 5_000);
+    return () => clearInterval(timer);
+  }, [offline, online, refreshListSilently]);
 
   // Reload whenever the screen regains focus (e.g. after creating a project).
   useFocusEffect(

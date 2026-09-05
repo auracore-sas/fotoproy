@@ -19,7 +19,7 @@ export default function ProjectDetailScreen() {
   const [offline, setOffline] = useState(false);
   const [mediaCount, setMediaCount] = useState(0);
   const { online } = useSync();
-  const prevOnlineRef = useRef(online);
+  const retryBusyRef = useRef(false);
 
   const load = useCallback(async () => {
     if (!token || !id) {
@@ -56,14 +56,34 @@ export default function ProjectDetailScreen() {
     }
   }, [token, id]);
 
-  // When connectivity comes back, refetch the project so the banner clears.
-  useEffect(() => {
-    const reconnected = online && !prevOnlineRef.current;
-    prevOnlineRef.current = online;
-    if (reconnected && offline) {
-      void load();
+  // Silent refetch (no loader flicker): flips state only when the server answers.
+  const refreshSilently = useCallback(async () => {
+    if (!token || !id || retryBusyRef.current) {
+      return;
     }
-  }, [online, offline, load]);
+    retryBusyRef.current = true;
+    try {
+      const data = await api.getProject(token, id);
+      setProject(data);
+      void upsertCachedProject(data);
+      setOffline(false);
+    } catch {
+      // Server still unreachable — keep showing the cached data + banner.
+    } finally {
+      retryBusyRef.current = false;
+    }
+  }, [token, id]);
+
+  // While showing cached data with connectivity, retry periodically until the
+  // server responds (a single retry can race the network coming back).
+  useEffect(() => {
+    if (!offline || !online) {
+      return undefined;
+    }
+    void refreshSilently();
+    const timer = setInterval(() => void refreshSilently(), 5_000);
+    return () => clearInterval(timer);
+  }, [offline, online, refreshSilently]);
 
   useEffect(() => {
     void load();
