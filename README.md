@@ -77,33 +77,35 @@ fotoproy/
 
 ## Documentación
 
-| Documento                      | Descripción                                                                                                                         |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| [docs/SPEC.md](docs/SPEC.md)   | Especificación técnica y de producto **v2.1**: visión, alcance del MVP, stack, arquitectura, modelo de datos y decisiones cerradas. |
-| [ROADMAP.md](ROADMAP.md)       | Plan de implementación: fases F0–F4 con tareas, criterios de terminado, hitos, riesgos y backlog post-MVP.                          |
-| [AGENTS.md](AGENTS.md)         | Reglas y flujos de trabajo para agentes de código: idiomas, convenciones, comandos y trampas.                                       |
-| [docs/archive/](docs/archive/) | Historial de versiones (SPEC v1.0 original, foco eléctrico LATAM).                                                                  |
+| Documento                                  | Descripción                                                                                                                         |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| [docs/SPEC.md](docs/SPEC.md)               | Especificación técnica y de producto **v2.1**: visión, alcance del MVP, stack, arquitectura, modelo de datos y decisiones cerradas. |
+| [docs/development.md](docs/development.md) | Guía de desarrollo: cómo levantar el backend, la app en el celular con Expo Go, demo M2 offline y solución de problemas.            |
+| [ROADMAP.md](ROADMAP.md)                   | Plan de implementación: fases F0–F4 con tareas, criterios de terminado, hitos, riesgos y backlog post-MVP.                          |
+| [AGENTS.md](AGENTS.md)                     | Reglas y flujos de trabajo para agentes de código: idiomas, convenciones, comandos y trampas.                                       |
+| [docs/archive/](docs/archive/)             | Historial de versiones (SPEC v1.0 original, foco eléctrico LATAM).                                                                  |
 
 ---
 
 ## Cómo empezar (desarrollo local)
 
+> Guía completa con pasos y troubleshooting en [docs/development.md](docs/development.md).
+
 ```bash
 # Requisitos: Node 26 (ver .nvmrc), pnpm, Docker
 
-pnpm install              # instala todos los workspaces (genera Prisma Client)
-docker compose up -d db   # Postgres 16 + PostGIS → localhost:55432
-pnpm db:migrate           # aplica las migraciones Prisma
-pnpm dev:api              # API NestJS (watch) → http://localhost:4100
+pnpm install              # primera vez: instala workspaces (genera Prisma Client)
+pnpm db:migrate           # primera vez: aplica las migraciones Prisma
 
-# Verificar que todo está vivo:
-curl http://localhost:4100/health
-# → {"status":"ok","db":"up",...}
+pnpm dev:up               # día a día: Docker (BD+MinIO) + API :4100 + envs con tu IP LAN
+pnpm dev:mobile           # terminal 2: Metro/Expo Go (escanea el QR con el celular)
 ```
 
-Comandos útiles: `pnpm build` (compila todo en orden) · `pnpm lint` · `pnpm format` · `pnpm db:studio` (explorar BD) · `pnpm db:down`.
+Verificar que la API está viva: `curl http://localhost:4100/health` → `{"status":"ok","db":"up",...}`.
 
-> 📌 **Puertos locales:** la BD usa el **55432** y la API el **4100** para no chocar con otros servicios de esta máquina (5432/5433/3000 están ocupados).
+Comandos útiles: `pnpm dev:stop` · `pnpm build` · `pnpm lint` · `pnpm format` · `pnpm db:studio` · `pnpm db:down`.
+
+> 📌 **Puertos locales:** BD **55432** · MinIO **9000/9001** · API **4100** · Metro **8081** (5432/5433/3000 están ocupados por otros servicios de esta máquina).
 
 ---
 

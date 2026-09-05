@@ -97,7 +97,9 @@ pnpm db:migrate           # aplica migraciones Prisma (usa packages/database/.en
 ### Ciclo diario
 
 ```bash
-pnpm dev:api              # API NestJS en watch → http://localhost:4100
+pnpm dev:up               # TODO backend: Docker (BD+MinIO) + API :4100 en background + envs con tu IP LAN
+pnpm dev:mobile           # Metro/Expo Go para el celular (terminal 2) — ver docs/development.md
+pnpm dev:stop             # detiene la API dev (contenedores siguen arriba)
 curl http://localhost:4100/health   # {"status":"ok","db":"up",...}
 pnpm build                # compila todo en orden topológico
 pnpm typecheck            # tsc --noEmit en todos los paquetes
