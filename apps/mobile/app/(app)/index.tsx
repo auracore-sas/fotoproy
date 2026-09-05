@@ -127,6 +127,14 @@ export default function ProjectsScreen() {
         </View>
         <View style={styles.actions}>
           <Button title="+ Nuevo" variant="secondary" onPress={() => router.push('/new-project')} />
+          <Pressable
+            onPress={() => router.push('/profile')}
+            style={styles.profileButton}
+            accessibilityRole="button"
+            accessibilityLabel="Perfil"
+          >
+            <Text style={styles.profileIcon}>👤</Text>
+          </Pressable>
           <Pressable onPress={onLogout} style={styles.logout}>
             <Text style={styles.logoutText}>Salir</Text>
           </Pressable>
@@ -182,6 +190,8 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   logout: { paddingHorizontal: 10, paddingVertical: 6 },
   logoutText: { color: colors.danger, fontWeight: '600' },
+  profileButton: { paddingHorizontal: 8, paddingVertical: 6 },
+  profileIcon: { fontSize: 20 },
   offlineBanner: {
     backgroundColor: '#EFF6FF',
     borderRadius: 8,

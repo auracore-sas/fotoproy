@@ -78,7 +78,10 @@ el registro se crea con su UUID de cliente y nunca se reescribe).
 
 El servidor puede **quemar una banda de texto sobre la imagen final** como
 evidencia visual (foto): código de proyecto · fecha UTC de `capturedAt` ·
-GPS (lat/lng/altitud) · autor · nota. Se activa con la env de la API:
+GPS (lat/lng/altitud) · **firma del autor** · nota. La **firma** es un texto
+corto configurable por cada usuario en su perfil (nombre corto, apodo o
+iniciales, máx. 48 caracteres; p. ej. `PVA · Arq.`); si el usuario no la ha
+definido se usa su nombre completo. Se activa con la env de la API:
 
 ```
 STORAGE_STAMP_PHOTOS=true   # false = el original se guarda limpio

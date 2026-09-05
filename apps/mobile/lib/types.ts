@@ -13,6 +13,8 @@ export interface UserInfo {
   role: UserRole;
   organizationId: string;
   organizationName: string;
+  /** Short professional signature (initials/nickname) burned on photos. */
+  signature: string | null;
 }
 
 export interface AuthResponse {

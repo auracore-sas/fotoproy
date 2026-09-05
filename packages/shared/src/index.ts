@@ -88,6 +88,24 @@ export const createUserSchema = z.object({
 });
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 
+/**
+ * Short professional signature burned on photos (initials / nickname).
+ * Optional: null/absent means “no signature set”.
+ */
+export const signatureSchema = z
+  .string()
+  .trim()
+  .max(48, 'Signature too long (max 48 chars)')
+  .nullable()
+  .optional();
+export type SignatureInput = z.infer<typeof signatureSchema>;
+
+export const updateProfileSchema = z.object({
+  fullName: fullNameSchema.optional(),
+  signature: signatureSchema,
+});
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+
 export const authResponseSchema = z.object({
   accessToken: z.string(),
   user: z.object({
@@ -97,6 +115,8 @@ export const authResponseSchema = z.object({
     role: z.enum(USER_ROLES),
     organizationId: z.string().uuid(),
     organizationName: z.string(),
+    /** Professional signature (initials/nickname) shown on photos. */
+    signature: z.string().max(48).nullable(),
   }),
 });
 export type AuthResponse = z.infer<typeof authResponseSchema>;

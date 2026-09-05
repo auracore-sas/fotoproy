@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
-import type { AuthResponse, LoginInput, RegisterInput } from '@fotoproy/shared';
-import { loginSchema, registerSchema } from '@fotoproy/shared';
+import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
+import type { AuthResponse, LoginInput, RegisterInput, UpdateProfileInput } from '@fotoproy/shared';
+import { loginSchema, registerSchema, updateProfileSchema } from '@fotoproy/shared';
 import { Public } from '../common/decorators/public.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe.js';
@@ -28,5 +28,13 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: AuthedUser): Promise<AuthResponse['user']> {
     return this.authService.me(user);
+  }
+
+  @Patch('me')
+  updateProfile(
+    @CurrentUser() user: AuthedUser,
+    @Body(new ZodValidationPipe(updateProfileSchema)) body: UpdateProfileInput,
+  ): Promise<AuthResponse['user']> {
+    return this.authService.updateProfile(user, body);
   }
 }

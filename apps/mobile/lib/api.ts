@@ -87,6 +87,14 @@ export const api = {
     return request('/auth/me', { token });
   },
 
+  /** Updates the caller's own profile (full name / photo signature). */
+  updateProfile(
+    token: string,
+    payload: { fullName?: string; signature?: string | null },
+  ): Promise<UserInfo> {
+    return request('/auth/me', { method: 'PATCH', token, body: payload });
+  },
+
   listProjects(token: string, page = 1): Promise<Page<Project>> {
     return request(`/projects?page=${page}&pageSize=20`, { token });
   },

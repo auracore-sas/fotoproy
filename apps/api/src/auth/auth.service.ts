@@ -4,7 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import type { JwtSignOptions } from '@nestjs/jwt';
 import { Prisma } from '@fotoproy/database';
 import bcrypt from 'bcryptjs';
-import type { AuthResponse, LoginInput, RegisterInput } from '@fotoproy/shared';
+import type { AuthResponse, LoginInput, RegisterInput, UpdateProfileInput } from '@fotoproy/shared';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { AuthedUser } from '../common/interfaces/auth-user.interface.js';
 
@@ -76,6 +76,26 @@ export class AuthService {
     return this.toUserDto(user);
   }
 
+  /**
+   * Updates the caller's own profile (full name / professional signature).
+   * The signature is the short text (initials, nickname) burned on photos.
+   */
+  async updateProfile(
+    current: AuthedUser,
+    input: UpdateProfileInput,
+  ): Promise<AuthResponse['user']> {
+    const user = await this.prisma.user.update({
+      where: { id: current.userId },
+      data: {
+        ...(input.fullName !== undefined && { fullName: input.fullName }),
+        // null clears the signature.
+        ...(input.signature !== undefined && { signature: input.signature }),
+      },
+      include: { organization: true },
+    });
+    return this.toUserDto(user);
+  }
+
   private async buildAuthResponse(user: {
     id: string;
     email: string;
@@ -119,6 +139,7 @@ export class AuthService {
     email: string;
     fullName: string;
     role: string;
+    signature?: string | null;
     organization: { id: string; legalName: string } | null;
   }): AuthResponse['user'] {
     return {
@@ -128,6 +149,7 @@ export class AuthService {
       role: user.role as AuthResponse['user']['role'],
       organizationId: user.organization?.id ?? '',
       organizationName: user.organization?.legalName ?? '',
+      signature: user.signature ?? null,
     };
   }
 }

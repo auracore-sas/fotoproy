@@ -87,7 +87,10 @@ export class ThumbnailsService implements OnModuleInit, OnModuleDestroy {
           select: { organizationId: true, code: true },
         }),
         photo.userId
-          ? this.prisma.user.findUnique({ where: { id: photo.userId }, select: { fullName: true } })
+          ? this.prisma.user.findUnique({
+              where: { id: photo.userId },
+              select: { fullName: true, signature: true },
+            })
           : null,
       ]);
       if (!project) {
@@ -107,7 +110,9 @@ export class ThumbnailsService implements OnModuleInit, OnModuleDestroy {
           .toBuffer();
         const { width } = await sharp(oriented).metadata();
         if (width && width > 0) {
-          const svg = buildStampSvg(width, photo, author?.fullName ?? null, project.code);
+          const signer =
+            (author?.signature ?? '').trim() || (author?.fullName ?? '').trim() || null;
+          const svg = buildStampSvg(width, photo, signer, project.code);
           source = await sharp(oriented)
             .composite([{ input: svg, top: 0, left: 0 }])
             .jpeg({ quality: 88, mozjpeg: true })

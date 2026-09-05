@@ -436,7 +436,8 @@ export default function CaptureScreen() {
       : geo.status === 'error'
         ? 'La foto se guardará igual, pero sin coordenadas hasta que haya señal GPS.'
         : 'Puedes capturar igual: al disparar se intenta por un instante.';
-  const stampLines = [`🏗️ ${projectLine}`, `👤 ${user?.fullName ?? ''}`, gpsLine];
+  const signer = (user?.signature ?? '').trim() || (user?.fullName ?? '');
+  const stampLines = [`🏗️ ${projectLine}`, `👤 ${signer}`, gpsLine];
   const formatTimer = `${String(Math.floor(recordSeconds / 60)).padStart(2, '0')}:${String(
     recordSeconds % 60,
   ).padStart(2, '0')}`;

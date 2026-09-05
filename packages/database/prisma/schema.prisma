@@ -68,6 +68,8 @@ model User {
   email          String        @unique
   passwordHash   String
   fullName       String
+  /** Short professional signature burned on photos (initials / nickname). */
+  signature      String?
   role           Role          @default(TECHNICIAN)
   isActive       Boolean       @default(true)
   createdAt      DateTime      @default(now())

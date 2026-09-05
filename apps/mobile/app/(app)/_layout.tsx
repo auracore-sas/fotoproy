@@ -25,6 +25,7 @@ export default function AppLayout() {
       <Stack.Screen name="media-viewer" options={{ headerShown: false }} />
       <Stack.Screen name="project/[id]" options={{ title: 'Proyecto' }} />
       <Stack.Screen name="new-project" options={{ title: 'Nuevo proyecto' }} />
+      <Stack.Screen name="profile" options={{ title: 'Perfil' }} />
     </Stack>
   );
 }

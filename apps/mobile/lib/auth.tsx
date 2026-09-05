@@ -20,6 +20,8 @@ interface AuthContextValue {
     organizationName: string;
   }) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Updates the profile on the server and refreshes the stored session. */
+  updateProfile: (payload: { fullName?: string; signature?: string | null }) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -91,9 +93,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     ]);
   }, []);
 
+  const updateProfile = useCallback(
+    async (payload: { fullName?: string; signature?: string | null }) => {
+      if (!token) {
+        return;
+      }
+      const updated = await api.updateProfile(token, payload);
+      setUser(updated);
+      await SecureStore.setItemAsync(USER_KEY, JSON.stringify(updated));
+    },
+    [token],
+  );
+
   const value = useMemo(
-    () => ({ status, token, user, signIn, signUp, signOut }),
-    [status, token, user, signIn, signUp, signOut],
+    () => ({ status, token, user, signIn, signUp, signOut, updateProfile }),
+    [status, token, user, signIn, signUp, signOut, updateProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
