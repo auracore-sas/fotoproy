@@ -1,5 +1,5 @@
-# Local development database (PostgreSQL 16 + PostGIS)
-# Usage: docker compose up -d db   |   docker compose down
+# Local development services
+# Usage: docker compose up -d db minio   |   docker compose down
 services:
   db:
     image: postgis/postgis:16-3.5
@@ -19,5 +19,28 @@ services:
       timeout: 5s
       retries: 10
 
+  # S3-compatible object storage (same S3 API as Cloudflare R2).
+  # The API talks to it through env vars: in production point the same
+  # vars at the real R2 bucket (see apps/api/.env.example).
+  minio:
+    image: minio/minio:latest
+    container_name: fotoproy-minio
+    restart: unless-stopped
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: fotoproy
+      MINIO_ROOT_PASSWORD: fotoproy-secret
+    ports:
+      - '9000:9000' # S3 API
+      - '9001:9001' # web console
+    volumes:
+      - fotoproy_minio:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   fotoproy_pgdata:
+  fotoproy_minio:

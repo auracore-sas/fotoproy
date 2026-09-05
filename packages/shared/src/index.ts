@@ -205,6 +205,35 @@ export const photoListQuerySchema = z.object({
 });
 export type PhotoListQuery = z.infer<typeof photoListQuerySchema>;
 
+/** MIME types the API accepts for direct (pre-signed) uploads. */
+export const UPLOADABLE_MEDIA_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'video/mp4',
+] as const;
+export type UploadableMediaType = (typeof UPLOADABLE_MEDIA_TYPES)[number];
+
+export const presignPhotoUploadSchema = z.object({
+  /** Client UUID of the media item (also used as the object name). */
+  id: uuidSchema,
+  projectId: uuidSchema,
+  contentType: z.enum(UPLOADABLE_MEDIA_TYPES),
+});
+export type PresignPhotoUploadInput = z.infer<typeof presignPhotoUploadSchema>;
+
+export const presignUploadResponseSchema = z.object({
+  /** Object key to send back in POST /photos. */
+  storageKey: z.string(),
+  /** HTTP PUT URL (pre-signed, expires). Upload the file bytes directly. */
+  uploadUrl: z.string().url(),
+  contentType: z.enum(UPLOADABLE_MEDIA_TYPES),
+  /** Validity of uploadUrl in seconds. */
+  expiresIn: z.number().int(),
+});
+export type PresignUploadResponse = z.infer<typeof presignUploadResponseSchema>;
+
 /* ------------------------------------------------------------------ */
 /* Pins (photo anchored over a plan)                                   */
 /* ------------------------------------------------------------------ */

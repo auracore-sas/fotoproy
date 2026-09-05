@@ -129,21 +129,21 @@ model ProjectPlan {
 // ---------------------------------------------------------------------------
 
 model Photo {
-  id           String   @id
-  projectId    String
-  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  userId       String?
-  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  kind         MediaKind @default(PHOTO)
-  durationMs   Int? // Video duration in ms (kind VIDEO)
-  imageUrl     String
-  thumbnailUrl String?
-  latitude     Decimal? @db.Decimal(10, 7) // Device GPS (optional)
-  longitude    Decimal? @db.Decimal(10, 7)
-  altitude     Decimal? @db.Decimal(8, 2)
-  notes        String?
-  capturedAt   DateTime // Client timestamp (may drift while offline)
-  syncedAt     DateTime @default(now()) // Server timestamp
+  id                   String    @id
+  projectId            String
+  project              Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId               String?
+  user                 User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  kind                 MediaKind @default(PHOTO)
+  durationMs           Int? // Video duration in ms (kind VIDEO)
+  storageKey           String // R2 object key of the original media
+  thumbnailStorageKey  String? // R2 object key of the generated WebP thumbnail
+  latitude             Decimal?  @db.Decimal(10, 7) // Device GPS (optional)
+  longitude            Decimal?  @db.Decimal(10, 7)
+  altitude             Decimal?  @db.Decimal(8, 2)
+  notes                String?
+  capturedAt           DateTime // Client timestamp (may drift while offline)
+  syncedAt             DateTime  @default(now()) // Server timestamp
 
   pins     PhotoPin[]
   comments PhotoComment[]

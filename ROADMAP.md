@@ -81,11 +81,13 @@
 
 **DoD global F2 = M2.**
 
+> ✅ **Backend F2.1–F2.3 completado (2026-09-05)**: servicio de storage S3-compatible (mismo código para Cloudflare R2 en prod; **MinIO local** en docker-compose para dev, puertos 9000/9001) con pre-signed PUT/GET; migración `photos` → `storageKey`/`thumbnailStorageKey`; endpoints `POST /photos/presign`, `POST /photos` (idempotente por UUID cliente, valida clave esperada y org-scoping), `GET /photos?projectId` y `GET /photos/:id` (URLs firmadas cortas en la respuesta); thumbnails **WebP con sharp** (inline async + sweep cada 5 min, sin Redis — decisión F2.3 para el volumen MVP). Verificado E2E por script: subida directa a MinIO, thumbnail generado, idempotencia y 404 cross-org.
+
 ### Backend / infraestructura
 
-- [ ] **F2.1** **Storage R2**: bucket(s) + credenciales; servicio que emite **pre-signed PUT URLs** (objeto original) y URLs de lectura; configuración de CORS del bucket.
-- [ ] **F2.2** **Endpoint de fotos**: `POST /photos` (recibe metadatos + `storage_key` ya subido por el cliente; valida pertenencia a proyecto de la org); `GET /photos?projectId` (lista paginada con thumbnail); `GET /photos/:id`. Idempotencia por `id` de cliente (evita duplicados en reintentos).
-- [ ] **F2.3** **Procesado de imágenes** (job): al confirmarse una foto, generar **thumbnail WebP** con `sharp` y guardar en R2 (path `/thumbs/…`). Cola simple BullMQ (Redis) o procesamiento inline si el volumen lo permite ⚠️.
+- [x] **F2.1** **Storage R2**: bucket(s) + credenciales; servicio que emite **pre-signed PUT URLs** (objeto original) y URLs de lectura; configuración de CORS del bucket. (Dev: MinIO `docker compose up -d minio`; envs `STORAGE_*` en `apps/api/.env(.example)`. Para R2 real: endpoint/cuenta + credenciales + `STORAGE_FORCE_PATH_STYLE=false`.)
+- [x] **F2.2** **Endpoint de fotos**: `POST /photos` (recibe metadatos + `storage_key` ya subido por el cliente; valida pertenencia a proyecto de la org); `GET /photos?projectId` (lista paginada con thumbnail); `GET /photos/:id`. Idempotencia por `id` de cliente (evita duplicados en reintentos).
+- [x] **F2.3** **Procesado de imágenes** (job): al confirmarse una foto, generar **thumbnail WebP** con `sharp` y guardar en R2 (path `/thumbs/…`). ⚠️ Decisión: **inline asíncrono + sweep periódico** (sin BullMQ/Redis) — volumen MVP; migrar a cola si crece.
 - [ ] **F2.4** **Despliegue básico**: API contenedorizada + Postgres gestionado (Neon/RDS/VPS con docker) + bucket R2 + dominio/SSL + envs de producción + despliegue automatizado mínimo (script o CI). Entornos dev/staging/prod.
 
 ### Móvil — motor de sincronización
