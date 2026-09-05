@@ -1,8 +1,13 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as MediaLibrary from 'expo-media-library';
+import * as Sharing from 'expo-sharing';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Image,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -74,6 +79,7 @@ export default function MediaViewerScreen() {
   const [showMeta, setShowMeta] = useState(false);
   const [editingNote, setEditingNote] = useState(false);
   const [draftNote, setDraftNote] = useState('');
+  const [exporting, setExporting] = useState<'gallery' | 'share' | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -210,6 +216,93 @@ export default function MediaViewerScreen() {
     }
   };
 
+  /**
+   * Returns a file ready to export: the server copy (stamped original) when
+   * the media is synced or remote, or the local file when still pending.
+   */
+  const exportFile = async (): Promise<{ uri: string; mimeType: string }> => {
+    if (!row) {
+      throw new Error('Medio no disponible.');
+    }
+    const kind = row.kind === 'VIDEO' ? 'VIDEO' : 'PHOTO';
+    const ext = kind === 'VIDEO' ? 'mp4' : 'jpg';
+    const mimeType = kind === 'VIDEO' ? 'video/mp4' : 'image/jpeg';
+    if (!row.isRemote && row.syncedAt == null) {
+      // Still pending: only the local file exists (no stamp yet).
+      return { uri: row.localUri, mimeType };
+    }
+    // Synced / remote: fetch a fresh signed URL and download the server copy
+    // (includes the burned evidence stamp for photos).
+    if (!token) {
+      throw new Error('Necesitas sesión para descargar el original.');
+    }
+    const dir = `${FileSystem.cacheDirectory ?? ''}export/`;
+    await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => undefined);
+    const target = `${dir}${row.id}.${ext}`;
+    const fresh = await api.getPhoto(token, row.id);
+    const result = await FileSystem.downloadAsync(fresh.imageUrl, target);
+    if (result.status < 200 || result.status >= 300) {
+      throw new Error('No se pudo descargar el original del servidor.');
+    }
+    return { uri: target, mimeType };
+  };
+
+  const saveToGallery = async () => {
+    if (exporting || !row) {
+      return;
+    }
+    setExporting('gallery');
+    try {
+      const permission = await MediaLibrary.requestPermissionsAsync(true);
+      if (!permission.granted) {
+        Alert.alert(
+          'Permiso de galería',
+          'Activa el permiso de fotos para guardar el archivo en tu galería.',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Abrir ajustes', onPress: () => void Linking.openSettings() },
+          ],
+        );
+        return;
+      }
+      const { uri } = await exportFile();
+      await MediaLibrary.saveToLibraryAsync(uri);
+      Alert.alert(
+        '✓ Guardado',
+        row.isRemote || row.syncedAt
+          ? 'Guardado en tu galería (original con estampa).'
+          : 'Guardado en tu galería (copia local, aún sin sincronizar).',
+      );
+    } catch (err) {
+      Alert.alert('Error al guardar', errorMessage(err));
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const shareFile = async () => {
+    if (exporting || !row) {
+      return;
+    }
+    setExporting('share');
+    try {
+      const available = await Sharing.isAvailableAsync();
+      if (!available) {
+        Alert.alert('Compartir no disponible', 'Este dispositivo no soporta compartir archivos.');
+        return;
+      }
+      const { uri, mimeType } = await exportFile();
+      await Sharing.shareAsync(uri, {
+        mimeType,
+        dialogTitle: row.kind === 'VIDEO' ? 'Compartir video' : 'Compartir foto',
+      });
+    } catch (err) {
+      Alert.alert('Error al compartir', errorMessage(err));
+    } finally {
+      setExporting(null);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.mediaArea}>
@@ -283,6 +376,34 @@ export default function MediaViewerScreen() {
             <Text style={styles.metaButtonText}>ℹ️ Ver metadatos</Text>
           </Pressable>
         )}
+
+        <View style={styles.exportRow}>
+          <Pressable
+            onPress={() => void saveToGallery()}
+            disabled={exporting !== null}
+            style={({ pressed }) => [styles.exportButton, pressed && { opacity: 0.8 }]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.exportText}>
+              {exporting === 'gallery' ? 'Guardando…' : '💾 Guardar en galería'}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => void shareFile()}
+            disabled={exporting !== null}
+            style={({ pressed }) => [styles.exportButton, pressed && { opacity: 0.8 }]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.exportText}>
+              {exporting === 'share' ? 'Preparando…' : '↗️ Compartir'}
+            </Text>
+          </Pressable>
+        </View>
+        {row && !row.isRemote && row.syncedAt == null ? (
+          <Text style={styles.exportHint}>
+            Pendiente de sincronizar: se exporta la copia local (sin estampa).
+          </Text>
+        ) : null}
 
         {row.notes ? (
           <View style={styles.notesBox}>
@@ -388,6 +509,18 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   metaButtonText: { color: '#DBEAFE', fontSize: 13, fontWeight: '600' },
+  exportRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  exportButton: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+    borderRadius: 8,
+    paddingVertical: 9,
+    alignItems: 'center',
+  },
+  exportText: { color: '#DBEAFE', fontSize: 13, fontWeight: '600' },
+  exportHint: { color: '#94A3B8', fontSize: 12, marginTop: 8, fontStyle: 'italic' },
   notesBox: {
     marginTop: 10,
     backgroundColor: 'rgba(255,255,255,0.08)',

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable no-undef -- standalone Node CLI (not part of the TS codebase) */
 /**
  * Downloads a stored photo (original + thumbnail) from local MinIO / R2
  * through a fresh signed URL, straight from the database.
@@ -69,7 +70,9 @@ try {
     photo.storageKey,
     path.join(outDir, `${photo.project.code}-${photoId}.${photo.storageKey.split('.').pop()}`),
   );
-  console.log(`Original (${photo.kind.toLowerCase()}): ${original.targetFile} (${original.bytes} bytes)`);
+  console.log(
+    `Original (${photo.kind.toLowerCase()}): ${original.targetFile} (${original.bytes} bytes)`,
+  );
 
   if (photo.thumbnailStorageKey) {
     const thumb = await download(
@@ -79,7 +82,9 @@ try {
     console.log(`Thumbnail: ${thumb.targetFile} (${thumb.bytes} bytes)`);
   }
 
-  console.log(`Meta: capturedAt=${photo.capturedAt.toISOString()} syncedAt=${photo.syncedAt.toISOString()}`);
+  console.log(
+    `Meta: capturedAt=${photo.capturedAt.toISOString()} syncedAt=${photo.syncedAt.toISOString()}`,
+  );
 } finally {
   await prisma.$disconnect();
 }

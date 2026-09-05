@@ -45,7 +45,16 @@
           "locationWhenInUsePermission": "FotoProy usa tu ubicación para estampar las fotos de obra."
         }
       ],
-      "expo-video"
+      "expo-video",
+      "expo-sharing",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "FotoProy guarda los medios con estampa en tu galería.",
+          "savePhotosPermission": "FotoProy guarda los medios con estampa en tu galería.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
     ]
   }
 }
