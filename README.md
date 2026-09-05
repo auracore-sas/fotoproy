@@ -81,6 +81,7 @@ fotoproy/
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
 | [docs/SPEC.md](docs/SPEC.md)               | Especificación técnica y de producto **v2.1**: visión, alcance del MVP, stack, arquitectura, modelo de datos y decisiones cerradas. |
 | [docs/development.md](docs/development.md) | Guía de desarrollo: cómo levantar el backend, la app en el celular con Expo Go, demo M2 offline y solución de problemas.            |
+| [docs/metadata.md](docs/metadata.md)       | Referencia del producto: metadatos registrados por foto/video (captura, sync, estampa visual, servidor).                            |
 | [ROADMAP.md](ROADMAP.md)                   | Plan de implementación: fases F0–F4 con tareas, criterios de terminado, hitos, riesgos y backlog post-MVP.                          |
 | [AGENTS.md](AGENTS.md)                     | Reglas y flujos de trabajo para agentes de código: idiomas, convenciones, comandos y trampas.                                       |
 | [docs/archive/](docs/archive/)             | Historial de versiones (SPEC v1.0 original, foco eléctrico LATAM).                                                                  |

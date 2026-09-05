@@ -6,21 +6,24 @@ import { StorageService } from '../storage/storage.service.js';
 import { thumbnailStorageKey } from '../storage/object-keys.js';
 
 /**
- * Generates WebP thumbnails (≈480px) for confirmed photos and stores them in
- * the bucket under `thumbs/…`.
+ * Post-processing for confirmed photos (sharp, inline async + periodic sweep):
  *
- * MVP approach (no queue infrastructure yet):
- *  - `schedule()` fires an in-process, non-blocking job right after a photo
- *    row is created;
- *  - a periodic sweep retries rows that still lack a thumbnail (e.g. after a
- *    restart or a transient storage error).
- * Photos whose client already uploaded a thumbnail (thumbnailStorageKey set)
- * are skipped. Videos are skipped (sharp has no video decoder).
+ *  1. OPTIONAL evidence stamp: burns a band with project code, capture time
+ *     (UTC), GPS coordinates, author and note ONTO the stored original
+ *     (STORAGE_STAMP_PHOTOS=true). The stamped JPEG overwrites the same
+ *     object key so the whole team sees the same image.
+ *  2. Thumbnail: always generates a ~480px JPEG under `thumbs/…` from the
+ *     (possibly stamped) image — JPEG on purpose: RN's core <Image> cannot
+ *     decode WebP on iOS.
+ *
+ * Videos are skipped (sharp has no video decoder). Rows whose client already
+ * uploaded a thumbnail (thumbnailStorageKey set) are skipped too.
  */
 @Injectable()
 export class ThumbnailsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ThumbnailsService.name);
   private readonly enabled: boolean;
+  private readonly stampEnabled: boolean;
   private readonly sweepIntervalMs = 5 * 60 * 1000;
   private timer?: NodeJS.Timeout;
   /** In-flight ids so the sweep never duplicates a running job. */
@@ -32,6 +35,7 @@ export class ThumbnailsService implements OnModuleInit, OnModuleDestroy {
     config: ConfigService,
   ) {
     this.enabled = (config.get<string>('STORAGE_GENERATE_THUMBS') ?? 'true') === 'true';
+    this.stampEnabled = (config.get<string>('STORAGE_STAMP_PHOTOS') ?? 'true') === 'true';
   }
 
   onModuleInit(): void {
@@ -57,13 +61,13 @@ export class ThumbnailsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Fire-and-forget thumbnail generation for a just-created photo. */
+  /** Fire-and-forget processing for a just-created photo. */
   schedule(photoId: string): void {
     if (!this.enabled) {
       return;
     }
     void this.process(photoId).catch((error) =>
-      this.logger.error(`Thumbnail for ${photoId} failed: ${(error as Error).message}`),
+      this.logger.error(`Processing for ${photoId} failed: ${(error as Error).message}`),
     );
   }
 
@@ -77,22 +81,47 @@ export class ThumbnailsService implements OnModuleInit, OnModuleDestroy {
       if (!photo || photo.kind !== 'PHOTO' || photo.thumbnailStorageKey) {
         return;
       }
-      const project = await this.prisma.project.findUnique({
-        where: { id: photo.projectId },
-        select: { organizationId: true },
-      });
+      const [project, author] = await Promise.all([
+        this.prisma.project.findUnique({
+          where: { id: photo.projectId },
+          select: { organizationId: true, code: true },
+        }),
+        photo.userId
+          ? this.prisma.user.findUnique({ where: { id: photo.userId }, select: { fullName: true } })
+          : null,
+      ]);
       if (!project) {
         return;
       }
 
-      const original = await this.storage.getObject(photo.storageKey);
       const { default: sharp } = await import('sharp');
-      const thumb = await sharp(original)
-        .rotate() // honor EXIF orientation before stripping metadata
-        .resize({ width: 480, withoutEnlargement: true })
-        .jpeg({ quality: 72, mozjpeg: true }) // JPEG: RN core <Image> can't decode WebP on iOS
-        .toBuffer();
+      const original = await this.storage.getObject(photo.storageKey);
 
+      // Optional evidence stamp: oriented JPEG + top band, then the stored
+      // original is replaced so local/remote and thumbnails stay consistent.
+      let source = original;
+      if (this.stampEnabled) {
+        const oriented = await sharp(original)
+          .rotate()
+          .jpeg({ quality: 88, mozjpeg: true })
+          .toBuffer();
+        const { width } = await sharp(oriented).metadata();
+        if (width && width > 0) {
+          const svg = buildStampSvg(width, photo, author?.fullName ?? null, project.code);
+          source = await sharp(oriented)
+            .composite([{ input: svg, top: 0, left: 0 }])
+            .jpeg({ quality: 88, mozjpeg: true })
+            .toBuffer();
+          await this.storage.putObject(photo.storageKey, source, 'image/jpeg');
+          this.logger.log(`Evidence stamp burned for photo ${photoId}`);
+        }
+      }
+
+      const thumb = await sharp(source)
+        .rotate()
+        .resize({ width: 480, withoutEnlargement: true })
+        .jpeg({ quality: 72, mozjpeg: true })
+        .toBuffer();
       const thumbKey = thumbnailStorageKey(project.organizationId, photo.id);
       await this.storage.putObject(thumbKey, thumb, 'image/jpeg');
       await this.prisma.photo.update({
@@ -129,3 +158,77 @@ export class ThumbnailsService implements OnModuleInit, OnModuleDestroy {
 }
 
 export type { DbPhoto };
+
+/* ------------------------------------------------------------------ */
+/* Evidence stamp (SVG rendered over the photo by sharp/libvips)       */
+/* ------------------------------------------------------------------ */
+
+const BAND_RATIO = 0.055; // band height vs image width
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+/** Minimal XML escaping for SVG text nodes. */
+function xml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function shortText(text: string | null, max: number): string {
+  if (!text) {
+    return '';
+  }
+  const clean = text.replace(/\s+/g, ' ').trim();
+  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+/** `2026-09-05 13:20 UTC` — deterministic, timezone-free. */
+function formatUtcStamp(date: Date): string {
+  return (
+    `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())} ` +
+    `${pad2(date.getUTCHours())}:${pad2(date.getUTCMinutes())} UTC`
+  );
+}
+
+function gpsText(photo: DbPhoto): string {
+  const parts: string[] = [];
+  if (photo.latitude != null && photo.longitude != null) {
+    parts.push(`${Number(photo.latitude).toFixed(6)}, ${Number(photo.longitude).toFixed(6)}`);
+  } else {
+    parts.push('sin GPS');
+  }
+  if (photo.altitude != null) {
+    parts.push(`${Math.round(Number(photo.altitude))} m`);
+  }
+  return `GPS ${parts.join(' · ')}`;
+}
+
+/** Builds the SVG band (top of the image) with the evidence text. */
+export function buildStampSvg(
+  width: number,
+  photo: DbPhoto,
+  authorName: string | null,
+  projectCode: string,
+): Buffer {
+  const bandHeight = Math.round(clamp(width * BAND_RATIO, 96, 320));
+  const fs1 = Math.round(bandHeight * 0.24); // project · datetime
+  const fs2 = Math.round(bandHeight * 0.21); // GPS
+  const fs3 = Math.round(bandHeight * 0.18); // author · note
+  const padX = Math.round(bandHeight * 0.14);
+
+  const line1 = xml(`${projectCode}  ·  ${formatUtcStamp(photo.capturedAt)}`);
+  const line2 = xml(gpsText(photo));
+  const line3 = xml(
+    shortText([authorName, photo.notes].filter(Boolean).join(' · '), 160) || 'FotoProy',
+  );
+
+  const svg =
+    `<svg width="${width}" height="${bandHeight}" xmlns="http://www.w3.org/2000/svg">` +
+    `<rect width="100%" height="100%" fill="rgba(0,0,0,0.60)"/>` +
+    `<text x="${padX}" y="${Math.round(bandHeight * 0.42)}" fill="#ffffff" font-family="Helvetica, Arial, sans-serif" font-size="${fs1}" font-weight="bold">${line1}</text>` +
+    `<text x="${padX}" y="${Math.round(bandHeight * 0.72)}" fill="#ffd23f" font-family="Helvetica, Arial, sans-serif" font-size="${fs2}">${line2}</text>` +
+    `<text x="${padX}" y="${Math.round(bandHeight * 0.96)}" fill="#e8e8e8" font-family="Helvetica, Arial, sans-serif" font-size="${fs3}">${line3}</text>` +
+    `</svg>`;
+  return Buffer.from(svg);
+}

@@ -64,6 +64,15 @@ export async function markPhotoSynced(id: string, syncedAt: string): Promise<voi
   await db.update(photos).set({ syncedAt }).where(eq(photos.id, id));
 }
 
+/**
+ * Sets/clears the optional note of a LOCAL photo that has not synced yet.
+ * The sync engine reads the row at upload time, so the note travels with the
+ * next POST /photos. Synced photos are append-only (no edits).
+ */
+export async function updateLocalPhotoNotes(id: string, notes: string | null): Promise<void> {
+  await db.update(photos).set({ notes }).where(eq(photos.id, id));
+}
+
 /* ------------------------------------------------------------------ */
 /* Sync queue                                                          */
 /* ------------------------------------------------------------------ */
