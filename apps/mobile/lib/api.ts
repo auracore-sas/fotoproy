@@ -111,8 +111,8 @@ export const api = {
     return request('/photos', { method: 'POST', token, body: payload });
   },
 
-  listPhotos(token: string, projectId: string, page = 1): Promise<Page<Photo>> {
-    return request(`/photos?projectId=${projectId}&page=${page}&pageSize=20`, { token });
+  listPhotos(token: string, projectId: string, page = 1, pageSize = 20): Promise<Page<Photo>> {
+    return request(`/photos?projectId=${projectId}&page=${page}&pageSize=${pageSize}`, { token });
   },
 
   getPhoto(token: string, id: string): Promise<Photo> {

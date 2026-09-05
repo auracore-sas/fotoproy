@@ -101,4 +101,25 @@ export const MIGRATIONS: LocalMigration[] = [
       `ALTER TABLE sync_queue ADD COLUMN last_error TEXT;`,
     ],
   },
+  {
+    // v4 — online gallery cache: lightweight mirror of the server photo list
+    // (photos captured by the rest of the team) with locally downloaded
+    // thumbnails so they can be browsed offline.
+    version: 4,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS remote_photos (
+        id TEXT PRIMARY KEY NOT NULL,
+        project_id TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'PHOTO',
+        duration_ms INTEGER,
+        image_url TEXT,
+        thumb_local_uri TEXT,
+        author_user_id TEXT,
+        captured_at TEXT NOT NULL,
+        synced_at TEXT NOT NULL,
+        cached_at TEXT NOT NULL
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_remote_photos_project ON remote_photos(project_id);`,
+    ],
+  },
 ];

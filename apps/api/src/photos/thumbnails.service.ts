@@ -90,11 +90,11 @@ export class ThumbnailsService implements OnModuleInit, OnModuleDestroy {
       const thumb = await sharp(original)
         .rotate() // honor EXIF orientation before stripping metadata
         .resize({ width: 480, withoutEnlargement: true })
-        .webp({ quality: 75 })
+        .jpeg({ quality: 72, mozjpeg: true }) // JPEG: RN core <Image> can't decode WebP on iOS
         .toBuffer();
 
       const thumbKey = thumbnailStorageKey(project.organizationId, photo.id);
-      await this.storage.putObject(thumbKey, thumb, 'image/webp');
+      await this.storage.putObject(thumbKey, thumb, 'image/jpeg');
       await this.prisma.photo.update({
         where: { id: photo.id },
         data: { thumbnailStorageKey: thumbKey },

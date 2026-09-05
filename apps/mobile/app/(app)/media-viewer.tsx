@@ -3,17 +3,22 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import React, { useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { CenterLoader, colors } from '../../components/ui';
+import { api } from '../../lib/api';
+import { errorMessage, useAuth } from '../../lib/auth';
 import { getLocalPhoto } from '../../lib/db';
+import type { MediaKind } from '../../lib/types';
 
 interface MediaRow {
   id: string;
   kind: 'PHOTO' | 'VIDEO';
   durationMs: number | null;
+  /** Local file, or a remote URL when the item belongs to the team cache. */
   localUri: string;
   capturedAt: string;
   latitude: number | null;
   longitude: number | null;
   notes: string | null;
+  isRemote?: boolean;
 }
 
 function formatDate(iso: string): string {
@@ -45,20 +50,47 @@ function VideoPlayer({ uri }: { uri: string }) {
 
 export default function MediaViewerScreen() {
   const router = useRouter();
-  const { mediaId } = useLocalSearchParams<{ mediaId: string }>();
+  const { token } = useAuth();
+  const { mediaId, remoteId } = useLocalSearchParams<{
+    mediaId?: string;
+    remoteId?: string;
+  }>();
   const [row, setRow] = useState<MediaRow | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
-      if (!mediaId) {
-        return;
-      }
       try {
-        const found = await getLocalPhoto(mediaId);
-        if (mounted && found) {
-          setRow(found as unknown as MediaRow);
+        if (mediaId) {
+          const found = await getLocalPhoto(mediaId);
+          if (mounted && found) {
+            setRow(found as unknown as MediaRow);
+          }
+          return;
+        }
+        if (remoteId && token) {
+          // Team photo: fetch a fresh signed URL from the server (needs network).
+          const photo = await api.getPhoto(token, remoteId);
+          if (mounted) {
+            setRow({
+              id: photo.id,
+              kind: photo.kind as MediaKind,
+              durationMs: photo.durationMs,
+              localUri: photo.imageUrl,
+              capturedAt: photo.capturedAt,
+              latitude: photo.latitude,
+              longitude: photo.longitude,
+              notes: photo.notes,
+              isRemote: true,
+            });
+          }
+          return;
+        }
+      } catch (err) {
+        if (mounted) {
+          setError(errorMessage(err));
         }
       } finally {
         if (mounted) {
@@ -69,14 +101,16 @@ export default function MediaViewerScreen() {
     return () => {
       mounted = false;
     };
-  }, [mediaId]);
+  }, [mediaId, remoteId, token]);
 
   if (loading || !row) {
     return (
       <View style={styles.full}>
         {loading ? <CenterLoader /> : null}
         {!loading && !row ? (
-          <Text style={styles.missing}>El medio ya no existe en el dispositivo.</Text>
+          <Text style={styles.missing}>
+            {error ?? 'Este medio ya no está disponible. Conéctate e inténtalo de nuevo.'}
+          </Text>
         ) : null}
       </View>
     );
@@ -115,6 +149,7 @@ export default function MediaViewerScreen() {
           {isVideo && row.durationMs != null ? ` · ${formatDuration(row.durationMs)}` : ''}
         </Text>
         <Text style={styles.date}>{formatDate(row.capturedAt)}</Text>
+        {row.isRemote ? <Text style={styles.remote}>☁ Medio del equipo (en línea)</Text> : null}
         {location ? <Text style={styles.location}>{location}</Text> : null}
         {row.notes ? <Text style={styles.notes}>{row.notes}</Text> : null}
       </View>
@@ -124,7 +159,7 @@ export default function MediaViewerScreen() {
 
 const styles = StyleSheet.create({
   full: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
-  missing: { color: colors.textMuted, fontSize: 15 },
+  missing: { color: colors.textMuted, fontSize: 15, textAlign: 'center', marginHorizontal: 24 },
   container: { flex: 1, backgroundColor: '#000' },
   mediaArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   media: { width: '100%', height: '100%' },
@@ -148,6 +183,7 @@ const styles = StyleSheet.create({
   },
   kind: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
   date: { color: '#E2E8F0', fontSize: 14, marginTop: 4 },
+  remote: { color: '#93C5FD', fontSize: 13, marginTop: 4, fontStyle: 'italic' },
   location: { color: '#93C5FD', fontSize: 13, marginTop: 4 },
   notes: { color: '#E2E8F0', fontSize: 14, marginTop: 6 },
 });

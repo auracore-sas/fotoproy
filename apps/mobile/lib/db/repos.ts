@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, isNotNull, isNull, lte, ne, or } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull, isNull, lte, ne, notInArray, or } from 'drizzle-orm';
 import { db } from './database';
-import { photos, syncQueue } from './schema';
+import { photos, remotePhotos, syncQueue } from './schema';
 import type { MediaKind, SyncStatus } from './schema';
 import { generateId } from '../id';
 
@@ -216,4 +216,73 @@ export async function requeueFailed(): Promise<number> {
       .where(eq(syncQueue.status, 'FAILED'));
   }
   return rows.length;
+}
+
+/* ------------------------------------------------------------------ */
+/* Remote photos cache (online gallery / F2.8)                         */
+/* ------------------------------------------------------------------ */
+
+export interface RemotePhotoCacheRow {
+  id: string;
+  projectId: string;
+  kind: MediaKind;
+  durationMs: number | null;
+  imageUrl: string | null;
+  thumbLocalUri: string | null;
+  authorUserId: string | null;
+  capturedAt: string;
+  syncedAt: string;
+  cachedAt: string;
+}
+
+/** Upserts one server photo into the remote cache. */
+export async function upsertRemotePhoto(row: Omit<RemotePhotoCacheRow, 'cachedAt'>): Promise<void> {
+  const cachedAt = new Date().toISOString();
+  await db
+    .insert(remotePhotos)
+    .values({ ...row, cachedAt })
+    .onConflictDoUpdate({
+      target: remotePhotos.id,
+      set: {
+        kind: row.kind,
+        durationMs: row.durationMs,
+        imageUrl: row.imageUrl,
+        thumbLocalUri: row.thumbLocalUri,
+        authorUserId: row.authorUserId,
+        capturedAt: row.capturedAt,
+        syncedAt: row.syncedAt,
+        cachedAt,
+      },
+    });
+}
+
+/** Cache rows of a project, newest first. */
+export async function listRemotePhotos(projectId: string): Promise<RemotePhotoCacheRow[]> {
+  const rows = await db
+    .select()
+    .from(remotePhotos)
+    .where(eq(remotePhotos.projectId, projectId))
+    .orderBy(desc(remotePhotos.capturedAt));
+  return rows as unknown as RemotePhotoCacheRow[];
+}
+
+/** True when the project cache has a row (avoid re-downloading on focus). */
+export async function hasRemotePhoto(id: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: remotePhotos.id })
+    .from(remotePhotos)
+    .where(eq(remotePhotos.id, id))
+    .limit(1);
+  return rows.length > 0;
+}
+
+/** Removes cache rows of the project that are no longer on the server. */
+export async function pruneRemotePhotos(projectId: string, keepIds: string[]): Promise<void> {
+  if (keepIds.length === 0) {
+    await db.delete(remotePhotos).where(eq(remotePhotos.projectId, projectId));
+    return;
+  }
+  await db
+    .delete(remotePhotos)
+    .where(and(eq(remotePhotos.projectId, projectId), notInArray(remotePhotos.id, keepIds)));
 }

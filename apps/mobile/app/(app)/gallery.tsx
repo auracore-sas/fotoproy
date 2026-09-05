@@ -12,7 +12,8 @@ import {
 } from 'react-native';
 import { CenterLoader, colors, ErrorBanner, Screen } from '../../components/ui';
 import { SyncBar } from '../../components/sync-indicator';
-import { listLocalPhotos } from '../../lib/db';
+import { listMergedGallery, refreshRemoteGallery } from '../../lib/remote-gallery';
+import { useAuth } from '../../lib/auth';
 import { useSync } from '../../lib/sync';
 import type { ItemSyncState } from '../../lib/sync';
 
@@ -20,11 +21,16 @@ interface MediaRow {
   id: string;
   kind: 'PHOTO' | 'VIDEO';
   durationMs: number | null;
-  localUri: string;
+  localUri: string | null; // null for remote-only items
   capturedAt: string;
   syncedAt: string | null;
   latitude: number | null;
   longitude: number | null;
+  /** F2.8: photo captured by another member (thumbnail cached locally). */
+  isRemote?: boolean;
+  /** Signed original URL for remote items (valid while the session is fresh). */
+  imageUrl?: string | null;
+  thumbLocalUri?: string | null;
 }
 
 function formatDuration(ms: number | null): string {
@@ -38,12 +44,13 @@ function formatDuration(ms: number | null): string {
 export default function GalleryScreen() {
   const router = useRouter();
   const { projectId } = useLocalSearchParams<{ projectId: string }>();
+  const { token } = useAuth();
+  const { online, items: queueItems } = useSync();
   const [items, setItems] = useState<MediaRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [videoThumbs, setVideoThumbs] = useState<Record<string, string>>({});
   const thumbCache = useRef<Record<string, string>>({});
-  const sync = useSync();
 
   const load = useCallback(async () => {
     if (!projectId) {
@@ -51,10 +58,11 @@ export default function GalleryScreen() {
     }
     setLoading(true);
     try {
-      const rows = await listLocalPhotos(projectId);
+      const rows = await listMergedGallery(projectId);
       setItems(rows as unknown as MediaRow[]);
+      setError(null);
     } catch {
-      setError('No se pudieron cargar las fotos guardadas.');
+      setError('No se pudieron cargar los medios guardados.');
     } finally {
       setLoading(false);
     }
@@ -67,11 +75,31 @@ export default function GalleryScreen() {
     }, [load]),
   );
 
-  // Generate thumbnails for videos (cached in memory).
+  // While online, refresh the team gallery cache (metadata + thumbnails).
+  useFocusEffect(
+    useCallback(() => {
+      if (!projectId || !token || !online) {
+        return;
+      }
+      let mounted = true;
+      refreshRemoteGallery(token, projectId)
+        .catch(() => undefined)
+        .finally(() => {
+          if (mounted) {
+            void load();
+          }
+        });
+      return () => {
+        mounted = false;
+      };
+    }, [projectId, token, online, load]),
+  );
+
+  // Generate thumbnails for local videos (cached in memory).
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const videos = items.filter((item) => item.kind === 'VIDEO');
+      const videos = items.filter((item) => item.kind === 'VIDEO' && !item.isRemote);
       const missing = videos.filter((v) => !thumbCache.current[v.id]);
       if (missing.length === 0) {
         return;
@@ -79,6 +107,9 @@ export default function GalleryScreen() {
       const results = await Promise.all(
         missing.map(async (video) => {
           try {
+            if (!video.localUri) {
+              return null;
+            }
             const thumb = await getThumbnailAsync(video.localUri, { time: 0 });
             return { id: video.id, uri: thumb.uri } as const;
           } catch {
@@ -104,25 +135,35 @@ export default function GalleryScreen() {
   }, [items]);
 
   const openMedia = (item: MediaRow) => {
-    router.push({ pathname: '/media-viewer', params: { mediaId: item.id } });
+    if (!item.isRemote) {
+      router.push({ pathname: '/media-viewer', params: { mediaId: item.id } });
+      return;
+    }
+    // Remote item: the viewer fetches a fresh signed URL from the server
+    // (cached ones expire), so this works whenever there is connectivity.
+    router.push({ pathname: '/media-viewer', params: { remoteId: item.id } });
   };
 
-  const syncBadge = (item: MediaRow): { state: ItemSyncState | 'SYNCED'; label: string } => {
-    const queueState = sync.items[item.id];
-    if (queueState) {
-      return {
-        state: queueState,
-        label: queueState === 'FAILED' ? '⚠' : queueState === 'UPLOADING' ? '…' : '⏫',
-      };
+  const tileThumb = (item: MediaRow): string | null => {
+    if (item.isRemote) {
+      return item.thumbLocalUri ?? null;
     }
-    return { state: 'SYNCED', label: '' };
+    if (item.kind === 'VIDEO') {
+      return videoThumbs[item.id] ?? null;
+    }
+    return item.localUri;
   };
 
   const renderItem = ({ item }: { item: MediaRow }) => {
     const isVideo = item.kind === 'VIDEO';
-    const thumbUri = isVideo ? videoThumbs[item.id] : item.localUri;
-    const badge = syncBadge(item);
-    const isSynced = badge.state === 'SYNCED' && item.syncedAt != null;
+    const thumbUri = tileThumb(item);
+    const queueState: ItemSyncState | undefined = item.isRemote ? undefined : queueItems[item.id];
+    const badge =
+      !item.isRemote && (queueState || item.syncedAt == null)
+        ? (queueState ?? 'PENDING')
+        : item.isRemote
+          ? 'REMOTE'
+          : null;
     return (
       <Pressable
         accessibilityRole="button"
@@ -134,7 +175,11 @@ export default function GalleryScreen() {
           <Image source={{ uri: thumbUri }} style={styles.tileImage} resizeMode="cover" />
         ) : (
           <View style={[styles.tileImage, styles.tilePlaceholder]}>
-            {isVideo ? <ActivityIndicator color={colors.primary} /> : null}
+            {isVideo ? (
+              <Text style={styles.videoGlyph}>▶</Text>
+            ) : (
+              <Text style={styles.videoGlyph}>📷</Text>
+            )}
           </View>
         )}
         {isVideo ? (
@@ -143,18 +188,24 @@ export default function GalleryScreen() {
             <Text style={styles.videoDuration}>{formatDuration(item.durationMs)}</Text>
           </View>
         ) : null}
-        {!isSynced ? (
+        {badge === 'REMOTE' ? (
           <View
             pointerEvents="none"
-            accessibilityLabel={
-              badge.state === 'FAILED' ? 'Error al sincronizar' : 'Por sincronizar'
-            }
-            style={[styles.syncBadge, badge.state === 'FAILED' && styles.syncBadgeError]}
+            style={styles.syncBadge}
+            accessibilityLabel="En línea (equipo)"
           >
-            {badge.state === 'UPLOADING' ? (
+            <Text style={styles.syncBadgeIcon}>☁</Text>
+          </View>
+        ) : badge ? (
+          <View
+            pointerEvents="none"
+            accessibilityLabel={badge === 'FAILED' ? 'Error al sincronizar' : 'Por sincronizar'}
+            style={[styles.syncBadge, badge === 'FAILED' && styles.syncBadgeError]}
+          >
+            {badge === 'UPLOADING' ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <Text style={styles.syncBadgeIcon}>{badge.label}</Text>
+              <Text style={styles.syncBadgeIcon}>{badge === 'FAILED' ? '⚠' : '⏫'}</Text>
             )}
           </View>
         ) : null}
@@ -178,9 +229,10 @@ export default function GalleryScreen() {
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>Sin fotos guardadas</Text>
+            <Text style={styles.emptyTitle}>Sin medios guardados</Text>
             <Text style={styles.emptyText}>
-              Toma fotos o videos con la cámara y aparecerán aquí, incluso sin conexión.
+              Toma fotos o videos con la cámara y aparecerán aquí, incluso sin conexión. Los medios
+              del equipo se muestran al abrir con internet.
             </Text>
           </View>
         }
@@ -200,7 +252,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
   },
   tileImage: { width: '100%', height: '100%' },
-  tilePlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  tilePlaceholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#334155' },
+  videoGlyph: { color: 'rgba(255,255,255,0.75)', fontSize: 26 },
   videoBadge: {
     position: 'absolute',
     bottom: 0,

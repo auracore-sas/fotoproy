@@ -73,6 +73,29 @@ export const cachedProjects = sqliteTable('cached_projects', {
   updatedAt: text('updated_at').notNull(),
 });
 
+/**
+ * Online gallery cache (F2.8): server photos captured by other team members,
+ * mirrored here with a locally downloaded thumbnail for offline browsing.
+ * It is a disposable cache — rows are refreshed/removed on every online sync
+ * of the project (unlike `photos`, which is the local-first append-only log).
+ */
+export const remotePhotos = sqliteTable('remote_photos', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull(),
+  kind: text('kind', { enum: [...mediaKinds] })
+    .notNull()
+    .default('PHOTO'),
+  durationMs: integer('duration_ms'),
+  /** Signed URL valid for the current session (refresh re-signs it). */
+  imageUrl: text('image_url'),
+  /** Downloaded local thumbnail file (JPEG). */
+  thumbLocalUri: text('thumb_local_uri'),
+  authorUserId: text('author_user_id'),
+  capturedAt: text('captured_at').notNull(),
+  syncedAt: text('synced_at').notNull(),
+  cachedAt: text('cached_at').notNull(),
+});
+
 export const syncStatuses = ['PENDING', 'UPLOADING', 'DONE', 'FAILED'] as const;
 export type SyncStatus = (typeof syncStatuses)[number];
 

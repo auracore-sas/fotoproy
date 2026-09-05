@@ -29,7 +29,8 @@ export function mediaStorageKey(organizationId: string, mediaId: string, ext: st
 }
 
 export function thumbnailStorageKey(organizationId: string, mediaId: string): string {
-  return `thumbs/${organizationId}/${mediaId}.webp`;
+  // JPEG on purpose: React Native's core <Image> cannot decode WebP on iOS.
+  return `thumbs/${organizationId}/${mediaId}.jpg`;
 }
 
 export type { MediaKind };
