@@ -392,6 +392,19 @@ export default function PlanViewerScreen() {
         <Text style={styles.topTitle} numberOfLines={1}>
           {plan.title}
         </Text>
+        <Pressable
+          onPress={() =>
+            router.push({
+              pathname: '/plan-photos',
+              params: { planId: plan.id, planTitle: plan.title },
+            })
+          }
+          style={styles.photosButton}
+          accessibilityRole="button"
+          accessibilityLabel="Ver fotos del plano"
+        >
+          <Text style={styles.photosButtonText}>📋</Text>
+        </Pressable>
         <Text style={styles.pinCount}>{pinsToDraw.length} 📍</Text>
       </View>
 
@@ -598,6 +611,16 @@ const styles = StyleSheet.create({
   },
   closeText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
   pinCount: { color: '#FDE68A', fontSize: 13, fontWeight: '700' },
+  photosButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  photosButtonText: { fontSize: 16 },
   imageArea: { flex: 1, overflow: 'hidden' },
   canvas: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   pin: {

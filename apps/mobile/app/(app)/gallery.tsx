@@ -1,21 +1,27 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { getThumbnailAsync } from 'expo-video-thumbnails';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Image,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { CenterLoader, colors, ErrorBanner, Screen } from '../../components/ui';
 import { SyncBar } from '../../components/sync-indicator';
+import { listLocalPins } from '../../lib/db';
 import { listMergedGallery, refreshRemoteGallery } from '../../lib/remote-gallery';
 import { useAuth } from '../../lib/auth';
 import { useSync } from '../../lib/sync';
+import { api } from '../../lib/api';
 import type { ItemSyncState } from '../../lib/sync';
+import type { Plan } from '../../lib/types';
+
+type AuthorFilter = 'all' | 'mine' | 'team';
 
 interface MediaRow {
   id: string;
@@ -26,10 +32,10 @@ interface MediaRow {
   syncedAt: string | null;
   latitude: number | null;
   longitude: number | null;
+  userId?: string | null;
+  authorUserId?: string | null;
   /** F2.8: photo captured by another member (thumbnail cached locally). */
   isRemote?: boolean;
-  /** Signed original URL for remote items (valid while the session is fresh). */
-  imageUrl?: string | null;
   thumbLocalUri?: string | null;
 }
 
@@ -39,6 +45,29 @@ function formatDuration(ms: number | null): string {
   }
   const total = Math.round(ms / 1000);
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function Chip({
+  label,
+  active,
+  onPress,
+  disabled,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={[styles.chip, active && styles.chipActive, disabled && styles.chipDisabled]}
+      accessibilityRole="button"
+    >
+      <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
+    </Pressable>
+  );
 }
 
 export default function GalleryScreen() {
@@ -51,6 +80,13 @@ export default function GalleryScreen() {
   const [error, setError] = useState<string | null>(null);
   const [videoThumbs, setVideoThumbs] = useState<Record<string, string>>({});
   const thumbCache = useRef<Record<string, string>>({});
+
+  // Filters (F3.4): author · date · plan.
+  const [author, setAuthor] = useState<AuthorFilter>('all');
+  const [days, setDays] = useState(0); // 0 = any date
+  const [planId, setPlanId] = useState<string | null>(null);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     if (!projectId) {
@@ -68,11 +104,17 @@ export default function GalleryScreen() {
     }
   }, [projectId]);
 
-  // Reload when the screen regains focus (e.g. after taking new photos).
+  // Reload on focus; also fetch the plan list once for the plan filter.
   useFocusEffect(
     useCallback(() => {
       void load();
-    }, [load]),
+      if (projectId && token && plans.length === 0) {
+        api
+          .listPlans(token, projectId)
+          .then((page) => setPlans(page.items))
+          .catch(() => undefined);
+      }
+    }, [load, projectId, token, plans.length]),
   );
 
   // While online, refresh the team gallery cache (metadata + thumbnails).
@@ -95,7 +137,30 @@ export default function GalleryScreen() {
     }, [projectId, token, online, load]),
   );
 
-  // Generate thumbnails for local videos (cached in memory).
+  // Fetch the pinned photo ids of the selected plan (local pending + synced).
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!planId) {
+        setPinnedIds(new Set());
+        return;
+      }
+      const local = await listLocalPins(planId).catch(() => []);
+      const server = token ? await api.listPlanPins(token, planId).catch(() => []) : [];
+      const ids = new Set<string>([
+        ...local.map((p) => p.photoId),
+        ...server.map((p) => p.photoId),
+      ]);
+      if (mounted) {
+        setPinnedIds(ids);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [planId, token]);
+
+  // Local video thumbnails (memory cache).
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -134,13 +199,31 @@ export default function GalleryScreen() {
     };
   }, [items]);
 
+  const visible = useMemo(() => {
+    const since = days > 0 ? new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString() : null;
+    return items.filter((row) => {
+      // 'mine' = captures on this device; 'team' = others synced on the server.
+      if (author === 'mine' && row.isRemote) {
+        return false;
+      }
+      if (author === 'team' && !row.isRemote) {
+        return false;
+      }
+      if (days > 0 && since && row.capturedAt < since) {
+        return false;
+      }
+      if (planId && !pinnedIds.has(row.id)) {
+        return false;
+      }
+      return true;
+    });
+  }, [items, author, days, planId, pinnedIds]);
+
   const openMedia = (item: MediaRow) => {
     if (!item.isRemote) {
       router.push({ pathname: '/media-viewer', params: { mediaId: item.id } });
       return;
     }
-    // Remote item: the viewer fetches a fresh signed URL from the server
-    // (cached ones expire), so this works whenever there is connectivity.
     router.push({ pathname: '/media-viewer', params: { remoteId: item.id } });
   };
 
@@ -175,11 +258,7 @@ export default function GalleryScreen() {
           <Image source={{ uri: thumbUri }} style={styles.tileImage} resizeMode="cover" />
         ) : (
           <View style={[styles.tileImage, styles.tilePlaceholder]}>
-            {isVideo ? (
-              <Text style={styles.videoGlyph}>▶</Text>
-            ) : (
-              <Text style={styles.videoGlyph}>📷</Text>
-            )}
+            <Text style={styles.videoGlyph}>{isVideo ? '▶' : '📷'}</Text>
           </View>
         )}
         {isVideo ? (
@@ -221,18 +300,65 @@ export default function GalleryScreen() {
     <Screen>
       <ErrorBanner message={error} />
       <SyncBar />
+
+      {/* Filters */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterRow}
+      >
+        <Chip label="Todas" active={author === 'all'} onPress={() => setAuthor('all')} />
+        <Chip label="Mías" active={author === 'mine'} onPress={() => setAuthor('mine')} />
+        <Chip label="Equipo" active={author === 'team'} onPress={() => setAuthor('team')} />
+        <Chip
+          label={
+            days === 0
+              ? '📅 Cualquier fecha'
+              : days === 7
+                ? '📅 Últimos 7 días'
+                : '📅 Últimos 30 días'
+          }
+          active={days !== 0}
+          onPress={() => setDays((d) => (d === 0 ? 7 : d === 7 ? 30 : 0))}
+        />
+        {planId ? (
+          <Chip label="📌 Plano seleccionado ✕" active onPress={() => setPlanId(null)} />
+        ) : null}
+      </ScrollView>
+
+      {plans.length > 0 && author !== 'team' ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+        >
+          <Text style={styles.filterLabel}>Planos:</Text>
+          {plans.map((plan) => (
+            <Chip
+              key={plan.id}
+              label={plan.title}
+              active={planId === plan.id}
+              onPress={() => setPlanId((current) => (current === plan.id ? null : plan.id))}
+            />
+          ))}
+        </ScrollView>
+      ) : null}
+
       <FlatList
-        data={items}
+        data={visible}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         numColumns={3}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>Sin medios guardados</Text>
+            <Text style={styles.emptyTitle}>
+              {items.length === 0 ? 'Sin medios guardados' : 'Sin resultados con estos filtros'}
+            </Text>
             <Text style={styles.emptyText}>
-              Toma fotos o videos con la cámara y aparecerán aquí, incluso sin conexión. Los medios
-              del equipo se muestran al abrir con internet.
+              {items.length === 0
+                ? 'Toma fotos o videos con la cámara y aparecerán aquí, incluso sin conexión. Los medios del equipo se muestran al abrir con internet.'
+                : 'Prueba quitar algún filtro (autor, fecha o plano).'}
             </Text>
           </View>
         }
@@ -242,6 +368,20 @@ export default function GalleryScreen() {
 }
 
 const styles = StyleSheet.create({
+  filterRow: { paddingHorizontal: 10, paddingVertical: 6, gap: 8, alignItems: 'center' },
+  filterLabel: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
+  chip: {
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipDisabled: { opacity: 0.5 },
+  chipText: { fontSize: 13, color: colors.text, fontWeight: '600' },
+  chipTextActive: { color: '#FFFFFF' },
   list: { padding: 4 },
   tile: {
     flex: 1 / 3,
@@ -253,7 +393,7 @@ const styles = StyleSheet.create({
   },
   tileImage: { width: '100%', height: '100%' },
   tilePlaceholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#334155' },
-  videoGlyph: { color: 'rgba(255,255,255,0.75)', fontSize: 26 },
+  videoGlyph: { fontSize: 22, color: 'rgba(255,255,255,0.75)' },
   videoBadge: {
     position: 'absolute',
     bottom: 0,
@@ -282,7 +422,13 @@ const styles = StyleSheet.create({
   },
   syncBadgeIcon: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
   syncBadgeError: { backgroundColor: '#DC2626' },
-  empty: { alignItems: 'center', paddingTop: 100, paddingHorizontal: 28 },
-  emptyTitle: { fontSize: 17, fontWeight: '600', color: colors.text },
-  emptyText: { fontSize: 14, color: colors.textMuted, marginTop: 6, textAlign: 'center' },
+  empty: { alignItems: 'center', paddingTop: 90, paddingHorizontal: 28 },
+  emptyTitle: { fontSize: 17, fontWeight: '600', color: colors.text, textAlign: 'center' },
+  emptyText: {
+    fontSize: 14,
+    color: colors.textMuted,
+    marginTop: 6,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
 });

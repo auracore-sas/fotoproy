@@ -28,6 +28,7 @@ export default function AppLayout() {
       <Stack.Screen name="profile" options={{ title: 'Perfil' }} />
       <Stack.Screen name="plans/[projectId]" options={{ title: 'Planos' }} />
       <Stack.Screen name="plan-viewer" options={{ headerShown: false }} />
+      <Stack.Screen name="plan-photos" options={{ title: 'Fotos del plano' }} />
     </Stack>
   );
 }
