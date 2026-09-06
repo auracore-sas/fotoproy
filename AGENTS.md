@@ -17,7 +17,7 @@
 | [README.md](README.md)       | Inicio rápido + comandos.                                                                                                    |
 | [AGENTS.md](AGENTS.md)       | Este archivo: reglas y flujos.                                                                                               |
 
-**Estado actual:** Fase 0 ✅ (M0) · **Fase 1 ✅ (M1)** — backend (auth JWT, roles, membresías, CRUD projects) y móvil completo: sesión, cámara con estampa GPS (ráfaga, zoom pinch, linterna, video corto), BD local SQLite + Drizzle con `sync_queue`, galería local de fotos/videos. **Fase 2 ⏳ implementada (backend + móvil) — pendiente validación M2 en dispositivo y despliegue F2.4**: storage S3-compatible (MinIO dev / Cloudflare R2 prod) con pre-signed URLs, endpoints `photos` (idempotentes, org-scoped) con thumbnails JPEG (sharp), motor de sync offline-first (FIFO + backoff, NetInfo, UI de pendientes, galería en línea del equipo). Ver ROADMAP para detalle.
+**Estado actual:** Fase 0 ✅ (M0) · Fase 1 ✅ (M1) · **Fase 2 ✅ (M2)** — storage S3-compatible (MinIO dev / R2 prod) con pre-signed URLs, photos idempotentes org-scoped con thumbnails JPEG, motor de sync offline-first (FIFO + backoff, NetInfo, UI de pendientes, galería en línea) — validado en dispositivo. **Fase 3 ⏳ implementada (backend + móvil) — M3 pendiente de cierre**: planos (subida/progreso, visor con zoom, lista), **anclaje de fotos por toque → pines (x%,y%)** local-first con sync, pines sobre el plano, fotos del plano, filtros de galería (autor/fecha/plano) y comentarios offline-first. Pendientes globales: validar comentarios en dispositivo, visor PDF (opcional), **F2.4 despliegue** (R2 + dominio del usuario) y Fase 4. Ver ROADMAP para detalle.
 
 ---
 
@@ -151,13 +151,14 @@ cd packages/database
 
 ---
 
-## 8. Fase 2 (en curso) — qué queda y cómo validar
+## 8. Fase 3 (en curso) — qué queda y cómo cerrar M3
 
-Ver tareas F2.1–F2.8 del ROADMAP. **Implementado** (commits a05192a → 57f7786):
+Ver tareas F3.0–F3.6 del ROADMAP. **Implementado** (backend a55d312; móvil 0398321 → ce3b7e9):
 
-- **Backend/archivos**: servicio de storage S3-compatible (mismo código para Cloudflare R2 y MinIO local vía envs `STORAGE_*`; bucket + CORS bootstrap) con **pre-signed PUT/GET**; migración `photos` → `storageKey`/`thumbnailStorageKey`; endpoints `POST /photos/presign`, `POST /photos` (idempotente por UUID cliente, valida clave esperada y org-scoping), `GET /photos?projectId`, `GET /photos/:id`; thumbnails **JPEG** con sharp (inline async + sweep 5 min; JPEG por compatibilidad RN-iOS, no WebP).
-- **Móvil — motor de sync**: NetInfo + cola FIFO SQLite (`next_attempt_at`/`last_error`), backoff exponencial con reintento automático, subida binaria directa (expo-file-system legacy, sin base64) → `POST /photos` → `DONE`; 401 pausa, 409 se confirma por GET; UI SyncBar + badges; caché de galería en línea (migración local v4).
-- **Pendiente**: validación M2 en dispositivo real (modo avión → captura → reconexión) y **F2.4 despliegue** (API contenedorizada + Postgres gestionado + R2 real + dominio/SSL; requiere credenciales R2 y dominio del usuario).
+- **Planos**: `POST /plans/presign` + `POST /plans` (idempotente, 409 en conflicto, roles ADMIN/SUPERVISOR, thumbnail JPEG async) y `GET /plans…`; móvil: lista, subida con progreso (expo-image-picker + `createUploadTask`), visor fullscreen con zoom/pan y cálculo de toque→(x%,y%).
+- **Pines (append-only, offline-first)**: POST /pins + GET /plans/:id/pins (foto firmada); móvil: tocar el plano → “usar foto existente”/“tomar foto ahora” → pin local + cola (motor procesa `pin`; 409 = éxito); pines rojos (sync) / ámbar (⏫ pendientes); tocar abre la foto. **Fotos del plano** (grilla 📋) y **filtros de galería** (autor/fecha/plano).
+- **Comentarios**: POST/comments + list con authorName; hoja 💬 en el visor, offline-first (motor procesa `comment`).
+- **Pendiente**: validar comentarios en dispositivo · visor **PDF** (spike F3.0: WebView+pdf.js; opcional, planos-imagen cubren M3) · **F2.4 despliegue** (R2 real + dominio) · luego Fase 4 (F4.1 enlaces de solo lectura).
 - `apps/mobile` tiene script `typecheck`: mantenerlo en verde junto al resto (`pnpm -r typecheck`).
 
 ---
