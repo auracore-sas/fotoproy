@@ -1,7 +1,11 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as MediaLibrary from 'expo-media-library';
+// NOTE: use the legacy subpath on purpose — `expo-media-library` (modern)
+// requires the 'ExpoMediaLibraryNext' native module that Expo Go 57.0.19 does
+// not ship yet; the legacy API targets the bundled 'ExpoMediaLibrary' module
+// and exposes the same saveToLibraryAsync / requestPermissionsAsync helpers.
+import * as MediaLibrary from 'expo-media-library/legacy';
 import * as Sharing from 'expo-sharing';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
