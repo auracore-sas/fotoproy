@@ -6,10 +6,13 @@
 import type {
   AuthResponse,
   CreatePhotoPayload,
+  CreatePlanPayload,
   CreateProjectPayload,
   Page,
   Photo,
+  Plan,
   PresignPhotoUploadPayload,
+  PresignPlanUploadPayload,
   PresignUploadResponse,
   Project,
   UserInfo,
@@ -125,5 +128,25 @@ export const api = {
 
   getPhoto(token: string, id: string): Promise<Photo> {
     return request(`/photos/${id}`, { token });
+  },
+
+  presignPlanUpload(
+    token: string,
+    payload: PresignPlanUploadPayload,
+  ): Promise<PresignUploadResponse> {
+    return request('/plans/presign', { method: 'POST', token, body: payload });
+  },
+
+  /** Registers a plan file already uploaded to storage (idempotent by id). */
+  createPlan(token: string, payload: CreatePlanPayload): Promise<Plan> {
+    return request('/plans', { method: 'POST', token, body: payload });
+  },
+
+  listPlans(token: string, projectId: string, page = 1): Promise<Page<Plan>> {
+    return request(`/plans?projectId=${projectId}&page=${page}&pageSize=20`, { token });
+  },
+
+  getPlan(token: string, id: string): Promise<Plan> {
+    return request(`/plans/${id}`, { token });
   },
 };

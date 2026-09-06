@@ -84,6 +84,39 @@ export interface CreatePhotoPayload {
   capturedAt: string;
 }
 
+export type PlanKind = 'IMAGE' | 'PDF';
+
+/** MIME types accepted for plan uploads — mirror of shared. */
+export type UploadablePlanType =
+  'image/jpeg' | 'image/png' | 'image/webp' | 'image/heic' | 'application/pdf';
+
+export interface PresignPlanUploadPayload {
+  id: string;
+  projectId: string;
+  contentType: UploadablePlanType;
+}
+
+export interface CreatePlanPayload {
+  id?: string;
+  projectId: string;
+  title: string;
+  planKind?: PlanKind;
+  storageKey: string;
+  pageCount?: number;
+}
+
+export interface Plan {
+  id: string;
+  projectId: string;
+  title: string;
+  planKind: PlanKind;
+  pageCount: number;
+  /** Short-lived signed URL to the plan file. */
+  fileUrl: string;
+  thumbnailUrl: string | null;
+  createdAt: string;
+}
+
 export interface Photo {
   id: string;
   projectId: string;

@@ -138,12 +138,28 @@ export default function ProjectDetailScreen() {
           </View>
 
           <View style={styles.comingSoon}>
-            <Text style={styles.comingSoonTitle}>🎬 Fotos y videos de obra</Text>
+            <Text style={styles.comingSoonTitle}>🗺️ Planos y anclaje</Text>
             <Text style={styles.comingSoonText}>
-              Toma fotos con estampa o videos cortos: se guardan al instante en el dispositivo. El
-              anclaje sobre planos llega en las siguientes fases.
+              Sube el plano de la obra para anclar fotos sobre él (próximamente el toque para
+              anclar).
             </Text>
           </View>
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() =>
+              router.push({ pathname: '/plans/[projectId]', params: { projectId: id } })
+            }
+            style={({ pressed }) => [styles.galleryButton, pressed && { opacity: 0.85 }]}
+          >
+            <Text style={styles.galleryButtonIcon}>🗺️</Text>
+            <View style={styles.captureButtonText}>
+              <Text style={styles.galleryButtonTitle}>Planos del proyecto</Text>
+              <Text style={styles.galleryButtonSubtitle}>
+                Ver y subir planos/mapas para anclar evidencias
+              </Text>
+            </View>
+          </Pressable>
 
           <Pressable
             accessibilityRole="button"
