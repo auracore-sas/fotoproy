@@ -6,10 +6,12 @@
 import type {
   AuthResponse,
   CreatePhotoPayload,
+  CreatePinPayload,
   CreatePlanPayload,
   CreateProjectPayload,
   Page,
   Photo,
+  Pin,
   Plan,
   PresignPhotoUploadPayload,
   PresignPlanUploadPayload,
@@ -148,5 +150,14 @@ export const api = {
 
   getPlan(token: string, id: string): Promise<Plan> {
     return request(`/plans/${id}`, { token });
+  },
+
+  /** Anchors a photo on a plan page (append-only, idempotent by id). */
+  createPin(token: string, payload: CreatePinPayload): Promise<Pin> {
+    return request('/pins', { method: 'POST', token, body: payload });
+  },
+
+  listPlanPins(token: string, planId: string): Promise<Pin[]> {
+    return request(`/plans/${planId}/pins`, { token });
   },
 };

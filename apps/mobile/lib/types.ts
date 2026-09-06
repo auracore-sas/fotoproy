@@ -133,3 +133,35 @@ export interface Photo {
   capturedAt: string;
   syncedAt: string;
 }
+
+export interface CreatePinPayload {
+  id: string;
+  planId: string;
+  photoId: string;
+  pageNumber?: number;
+  xPercentage: number;
+  yPercentage: number;
+}
+
+export interface PinPhotoSummary {
+  id: string;
+  kind: MediaKind;
+  durationMs: number | null;
+  capturedAt: string;
+  latitude: number | null;
+  longitude: number | null;
+  notes: string | null;
+  thumbnailUrl: string | null;
+  imageUrl: string;
+}
+
+export interface Pin {
+  id: string;
+  planId: string;
+  photoId: string;
+  pageNumber: number;
+  xPercentage: number;
+  yPercentage: number;
+  createdAt: string;
+  photo?: PinPhotoSummary;
+}

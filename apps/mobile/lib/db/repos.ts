@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, isNotNull, isNull, lte, ne, notInArray, or } from 'drizzle-orm';
 import { db } from './database';
-import { cachedProjects, photos, remotePhotos, syncQueue } from './schema';
+import { cachedProjects, photoPins, photos, remotePhotos, syncQueue } from './schema';
 import type { MediaKind, SyncStatus } from './schema';
 import { generateId } from '../id';
 
@@ -55,7 +55,6 @@ export async function listLocalPhotos(projectId: string) {
     .where(eq(photos.projectId, projectId))
     .orderBy(desc(photos.capturedAt));
 }
-
 export async function listUnsyncedPhotos() {
   return db.select().from(photos).where(isNull(photos.syncedAt));
 }
@@ -225,6 +224,51 @@ export async function requeueFailed(): Promise<number> {
       .where(eq(syncQueue.status, 'FAILED'));
   }
   return rows.length;
+}
+
+/* ------------------------------------------------------------------ */
+/* Photo pins (append-only local mirror + offline anchor, F3.3/F3.6)   */
+/* ------------------------------------------------------------------ */
+
+export interface LocalPin {
+  id: string;
+  planId: string;
+  photoId: string;
+  pageNumber: number;
+  xPercentage: number;
+  yPercentage: number;
+  createdAt: string;
+  syncedAt: string | null;
+}
+
+/** Persists a pin locally first — always succeeds, even offline. */
+export async function createLocalPin(
+  input: Omit<LocalPin, 'syncedAt' | 'createdAt'>,
+): Promise<void> {
+  await db.insert(photoPins).values({
+    ...input,
+    createdAt: new Date().toISOString(),
+    syncedAt: null,
+  });
+}
+
+export async function getLocalPin(id: string): Promise<LocalPin | null> {
+  const rows = await db.select().from(photoPins).where(eq(photoPins.id, id)).limit(1);
+  return (rows[0] as unknown as LocalPin | undefined) ?? null;
+}
+
+/** Pins anchored on a plan (synced + pending), oldest first. */
+export async function listLocalPins(planId: string): Promise<LocalPin[]> {
+  const rows = await db
+    .select()
+    .from(photoPins)
+    .where(eq(photoPins.planId, planId))
+    .orderBy(asc(photoPins.createdAt));
+  return rows as unknown as LocalPin[];
+}
+
+export async function markPinSynced(id: string, syncedAt: string): Promise<void> {
+  await db.update(photoPins).set({ syncedAt }).where(eq(photoPins.id, id));
 }
 
 /* ------------------------------------------------------------------ */

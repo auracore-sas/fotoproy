@@ -30,9 +30,11 @@ import {
   countPendingSync,
   dropSyncItem,
   getLocalPhoto,
+  getLocalPin,
   listNextPendingSync,
   listQueueItemStates,
   markPhotoSynced,
+  markPinSynced,
   markSyncFailed,
   markSyncUploading,
   requeueFailed,
@@ -213,8 +215,14 @@ export class SyncEngine {
   private async process(item: SyncQueueItem): Promise<ProcessOutcome> {
     const entityId = item.entityId;
     try {
+      const token = this.token!;
+
+      if (item.entityType === 'pin') {
+        return this.syncPin(item, token);
+      }
+
       if (item.entityType !== 'photo') {
-        // Pins/comments/plans arrive in F3 — never silently retry them forever.
+        // Comments arrive later — never silently retry them forever.
         await dropSyncItem(item.id);
         await this.refreshState();
         return 'ok';
@@ -227,7 +235,6 @@ export class SyncEngine {
         return 'ok';
       }
 
-      const token = this.token!;
       const kind = photo.kind as MediaKind;
       const contentType = contentTypes[kind];
 
@@ -308,6 +315,38 @@ export class SyncEngine {
   private async markItemUploading(item: SyncQueueItem, entityId: string): Promise<void> {
     await markSyncUploading(item.id);
     this.update({ items: { ...this.snapshotState.items, [entityId]: 'UPLOADING' } });
+  }
+
+  /** Syncs one locally-anchored pin (F3.6): POST /pins, idempotent by id. */
+  private async syncPin(item: SyncQueueItem, token: string): Promise<ProcessOutcome> {
+    const pin = await getLocalPin(item.entityId);
+    if (!pin) {
+      await dropSyncItem(item.id); // orphaned queue item
+      await this.refreshState();
+      return 'ok';
+    }
+    this.update({ syncing: true });
+    await this.markItemUploading(item, item.entityId);
+    try {
+      await api.createPin(token, {
+        id: pin.id,
+        planId: pin.planId,
+        photoId: pin.photoId,
+        pageNumber: pin.pageNumber,
+        xPercentage: pin.xPercentage,
+        yPercentage: pin.yPercentage,
+      });
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 409) {
+        return this.classifyApiError(item, error);
+      }
+      // 409 = already registered on a previous attempt → treat as synced.
+    }
+    await markPinSynced(pin.id, new Date().toISOString());
+    await completeSyncItem(item.id);
+    this.update({ syncing: false, lastError: null, lastSyncedAt: new Date().toISOString() });
+    await this.refreshState();
+    return 'ok';
   }
 
   /** Classifies API errors: 401 → pause, network/5xx → retry, other 4xx → fail. */
