@@ -110,15 +110,15 @@ model Project {
 // ---------------------------------------------------------------------------
 
 model ProjectPlan {
-  id           String    @id @default(uuid())
-  projectId    String
-  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  title        String
-  fileUrl      String
-  thumbnailUrl String?
-  pageCount    Int       @default(1)
-  planKind     PlanKind  @default(IMAGE)
-  createdAt    DateTime  @default(now())
+  id                   String    @id @default(uuid())
+  projectId            String
+  project              Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title                String
+  storageKey           String // R2 object key of the uploaded plan file
+  thumbnailStorageKey  String? // R2 object key of the generated JPEG thumbnail (IMAGE plans)
+  pageCount            Int       @default(1)
+  planKind             PlanKind  @default(IMAGE)
+  createdAt            DateTime  @default(now())
 
   pins PhotoPin[]
 

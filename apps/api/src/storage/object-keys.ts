@@ -14,6 +14,7 @@ const EXT_BY_CONTENT_TYPE: Record<string, string> = {
   'image/webp': 'webp',
   'image/heic': 'heic',
   'video/mp4': 'mp4',
+  'application/pdf': 'pdf',
 };
 
 export function extensionForContentType(contentType: string): string {
@@ -26,6 +27,10 @@ export function extensionForContentType(contentType: string): string {
 
 export function mediaStorageKey(organizationId: string, mediaId: string, ext: string): string {
   return `photos/${organizationId}/${mediaId}.${ext}`;
+}
+
+export function planStorageKey(organizationId: string, planId: string, ext: string): string {
+  return `plans/${organizationId}/${planId}.${ext}`;
 }
 
 export function thumbnailStorageKey(organizationId: string, mediaId: string): string {

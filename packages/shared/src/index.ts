@@ -157,6 +157,8 @@ export type ProjectListQuery = z.infer<typeof projectListQuerySchema>;
 /* ------------------------------------------------------------------ */
 
 export const createPlanInputSchema = z.object({
+  /** Client UUID — enables idempotency when the mobile retries. */
+  id: uuidSchema.optional(),
   projectId: uuidSchema,
   title: z.string().trim().min(1).max(255),
   planKind: z.enum(PLAN_KINDS).default('IMAGE'),
@@ -165,6 +167,31 @@ export const createPlanInputSchema = z.object({
   pageCount: z.number().int().min(1).max(500).default(1),
 });
 export type CreatePlanInput = z.infer<typeof createPlanInputSchema>;
+
+/** MIME types accepted for plan (blueprint/map) uploads. */
+export const UPLOADABLE_PLAN_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'application/pdf',
+] as const;
+export type UploadablePlanType = (typeof UPLOADABLE_PLAN_TYPES)[number];
+
+export const presignPlanUploadSchema = z.object({
+  /** Client UUID of the plan (also used as the object name). */
+  id: uuidSchema,
+  projectId: uuidSchema,
+  contentType: z.enum(UPLOADABLE_PLAN_TYPES),
+});
+export type PresignPlanUploadInput = z.infer<typeof presignPlanUploadSchema>;
+
+export const planListQuerySchema = z.object({
+  projectId: uuidSchema,
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+export type PlanListQuery = z.infer<typeof planListQuerySchema>;
 
 export const planSchema = z.object({
   id: uuidSchema,
@@ -244,11 +271,12 @@ export const presignPhotoUploadSchema = z.object({
 export type PresignPhotoUploadInput = z.infer<typeof presignPhotoUploadSchema>;
 
 export const presignUploadResponseSchema = z.object({
-  /** Object key to send back in POST /photos. */
+  /** Object key to send back in POST /photos (or /plans). */
   storageKey: z.string(),
   /** HTTP PUT URL (pre-signed, expires). Upload the file bytes directly. */
   uploadUrl: z.string().url(),
-  contentType: z.enum(UPLOADABLE_MEDIA_TYPES),
+  /** MIME type that was signed (informational; echoed by the client). */
+  contentType: z.string(),
   /** Validity of uploadUrl in seconds. */
   expiresIn: z.number().int(),
 });
@@ -300,6 +328,31 @@ export const commentSchema = z.object({
   createdAt: z.string().datetime({ offset: true }),
 });
 export type Comment = z.infer<typeof commentSchema>;
+
+/** Pin response including a summary of the anchored photo. */
+export const photoPinSchema = z.object({
+  id: uuidSchema,
+  planId: uuidSchema,
+  photoId: uuidSchema,
+  pageNumber: z.number().int(),
+  xPercentage: z.number(),
+  yPercentage: z.number(),
+  createdAt: z.string().datetime({ offset: true }),
+  photo: z
+    .object({
+      id: uuidSchema,
+      kind: z.enum(MEDIA_KINDS),
+      durationMs: z.number().int().nullable(),
+      capturedAt: z.string().datetime(),
+      latitude: latitudeSchema,
+      longitude: longitudeSchema,
+      notes: z.string().nullable(),
+      thumbnailUrl: z.string().url().nullable(),
+      imageUrl: z.string().url(),
+    })
+    .optional(),
+});
+export type PhotoPin = z.infer<typeof photoPinSchema>;
 
 /* ------------------------------------------------------------------ */
 /* Sharing (read-only links)                                           */
