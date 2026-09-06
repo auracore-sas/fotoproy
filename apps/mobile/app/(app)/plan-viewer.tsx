@@ -193,10 +193,12 @@ export default function PlanViewerScreen() {
         }
         lastTap.current = now;
         // Single tap → wait briefly to confirm it is not a double tap, then
-        // interpret the point on the plan and offer anchoring.
+        // interpret the point on the plan and offer anchoring. Coordinates are
+        // read NOW (RN nullifies synthetic events after the handler returns).
+        const { pageX, pageY } = evt.nativeEvent;
         setTimeout(() => {
           if (lastTap.current === now && boxRef.current && planRef.current) {
-            const pct = pointToPercentage(evt.nativeEvent.pageX, evt.nativeEvent.pageY);
+            const pct = pointToPercentage(pageX, pageY);
             if (pct) {
               setAnchorAt(pct);
             }
