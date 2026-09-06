@@ -114,8 +114,8 @@
 - [x] **F3.2** **Plans móvil** (parcial): lista de planos del proyecto (miniaturas firmadas; subir solo ADMIN/SUPERVISOR vía botón de cabecera), **subida con barra de progreso** (expo-image-picker + `createUploadTask` PUT) y **visor a pantalla completa** con zoom pellizco/doble-toque y arrastre (imagen). Pendiente: PDF multipágina (spike F3.0) y el toque para anclar (F3.3).
 - [x] **F3.3** **Pines API + móvil**: API ✅ + móvil ✅ — en el visor del plano, **tocar un punto** calcula (x%, y%) (con zoom/pan incluidos) → hoja con **"usar foto existente"** (grilla de fotos locales del proyecto) o **"tomar foto ahora"** (abre la cámara) → se crea el pin **local-first y se encola** (sube solo al reconectar; el motor de sync ya procesa `pin`, F3.6 parcial) con intento online inmediato; los pines se dibujan sobre el plano (sincronizados rojos, pendientes ámbar) y **tocar un pin abre la foto**.
 - [x] **F3.4** **Navegación desde pins**: tocar un pin abre la foto ✅ · ver todas las fotos de un plan ✅ (pantalla plan-photos, grilla de pines sincronizados) · **filtros de galería** por autor (mías/equipo), fecha (7/30 días) y **plano** (ids de pines locales + servidor).
-- [ ] **F3.5** **Comentarios**: API ✅ (`POST /comments`, `GET /photos/:id/comments`, authorName) — pendiente UI móvil (online y offline→cola).
-- [ ] **F3.6** **Sync extendido**: pins y comentarios creados offline se sincronizan con la misma cola (F2.5); conflictos de pins no aplican (append-only).
+- [x] **F3.5** **Comentarios**: API ✅ + UI móvil ✅ — hoja de comentarios en el visor de la foto (lista con autor + hora relativa; los pendientes se marcan ⏫ “por subir”), compositor que funciona **offline** (local-first + cola; intento online inmediato) y merge servidor↔local por id.
+- [x] **F3.6** **Sync extendido**: pins ✅ y **comentarios** ✅ creados offline se sincronizan con la misma cola (F2.5); conflictos no aplican (append-only; 409 = idempotencia = éxito).
 
 ---
 
@@ -186,6 +186,7 @@ Orden sugerido (P0 = primero cuando se valide en campo):
 
 ## Registro de cambios
 
+- **v1.22 (2026-09-06):** F3.5/F3.6 — **comentarios en fotos**: hoja 💬 en el visor (lista autor + hora relativa, pendientes ⏫), compositor **offline-first** (local + cola, intento online inmediato; el motor de sync ya sube `comment` con 409=éxito) y merge servidor↔local por id. F3.6 cerrado para pins y comentarios (append-only, sin conflictos).
 - **v1.21 (2026-09-06):** F3.4 — **fotos del plano**: grilla con todas las fotos ancladas (desde pines sincronizados, con coordenadas %) accesible con 📋 desde el visor; **filtros de galería** por autor (todas / mías / equipo), por fecha (últimos 7/30 días) y por plano (ids de pines locales + servidor). Estado vacío distinto cuando hay filtros activos.
 - **v1.20 (2026-09-06):** F3.3 — **anclaje de fotos sobre el plano en el móvil**: toque → (x%, y%) exactos (respetando zoom/pellizco y pan) → “usar foto existente” (grilla de fotos locales del proyecto) o “tomar foto ahora” → el pin se crea **local-first** y se encola (motor de sync aprende `pin`: POST /pins idempotente con 409 como éxito) con intento online inmediato; pines dibujados sobre el plano (rojo sincronizado / ámbar pendiente ⏫) y tocar un pin abre la foto. Pins locales con `syncedAt` (append-only).
 - **v1.19 (2026-09-05):** F3.2 móvil (parcial): **lista de planos** del proyecto con miniaturas y subida (solo ADMIN/SUPERVISOR), **subida con barra de progreso** (expo-image-picker + `createUploadTask` PUT binario) y **visor de plano a pantalla completa** con zoom (pellizco / doble toque) y arrastre. Botón “Planos del proyecto” en el detalle. Pendiente: PDF multipágina (spike F3.0) y toque para anclar (F3.3).

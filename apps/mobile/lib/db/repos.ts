@@ -1,6 +1,13 @@
 import { and, asc, desc, eq, isNotNull, isNull, lte, ne, notInArray, or } from 'drizzle-orm';
 import { db } from './database';
-import { cachedProjects, photoPins, photos, remotePhotos, syncQueue } from './schema';
+import {
+  cachedProjects,
+  photoComments,
+  photoPins,
+  photos,
+  remotePhotos,
+  syncQueue,
+} from './schema';
 import type { MediaKind, SyncStatus } from './schema';
 import { generateId } from '../id';
 
@@ -269,6 +276,48 @@ export async function listLocalPins(planId: string): Promise<LocalPin[]> {
 
 export async function markPinSynced(id: string, syncedAt: string): Promise<void> {
   await db.update(photoPins).set({ syncedAt }).where(eq(photoPins.id, id));
+}
+
+/* ------------------------------------------------------------------ */
+/* Photo comments (append-only local mirror, F3.5/F3.6)                */
+/* ------------------------------------------------------------------ */
+
+export interface LocalComment {
+  id: string;
+  photoId: string;
+  body: string;
+  createdAt: string;
+  syncedAt: string | null;
+}
+
+/** Persists a comment locally first — always succeeds, even offline. */
+export async function createLocalComment(
+  input: Omit<LocalComment, 'syncedAt' | 'createdAt'>,
+): Promise<void> {
+  await db.insert(photoComments).values({
+    ...input,
+    createdAt: new Date().toISOString(),
+    syncedAt: null,
+  });
+}
+
+export async function getLocalComment(id: string): Promise<LocalComment | null> {
+  const rows = await db.select().from(photoComments).where(eq(photoComments.id, id)).limit(1);
+  return (rows[0] as unknown as LocalComment | undefined) ?? null;
+}
+
+/** Comments stored on this device for a photo, oldest first. */
+export async function listLocalComments(photoId: string): Promise<LocalComment[]> {
+  const rows = await db
+    .select()
+    .from(photoComments)
+    .where(eq(photoComments.photoId, photoId))
+    .orderBy(asc(photoComments.createdAt));
+  return rows as unknown as LocalComment[];
+}
+
+export async function markCommentSynced(id: string, syncedAt: string): Promise<void> {
+  await db.update(photoComments).set({ syncedAt }).where(eq(photoComments.id, id));
 }
 
 /* ------------------------------------------------------------------ */

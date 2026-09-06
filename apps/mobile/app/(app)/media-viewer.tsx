@@ -21,6 +21,7 @@ import {
   View,
 } from 'react-native';
 import { CenterLoader, colors } from '../../components/ui';
+import CommentsSheet from '../../components/comments-sheet';
 import { api } from '../../lib/api';
 import { errorMessage, useAuth } from '../../lib/auth';
 import { getCachedProject, getLocalPhoto, updateLocalPhotoNotes } from '../../lib/db';
@@ -81,6 +82,7 @@ export default function MediaViewerScreen() {
   const [error, setError] = useState<string | null>(null);
   const [projectLabel, setProjectLabel] = useState<string | null>(null);
   const [showMeta, setShowMeta] = useState(false);
+  const [showComments, setShowComments] = useState(false);
   const [editingNote, setEditingNote] = useState(false);
   const [draftNote, setDraftNote] = useState('');
   const [exporting, setExporting] = useState<'gallery' | 'share' | null>(null);
@@ -371,15 +373,33 @@ export default function MediaViewerScreen() {
             </View>
           </View>
         ) : (
-          <Pressable
-            onPress={() => setShowMeta(true)}
-            style={styles.metaButton}
-            accessibilityRole="button"
-            accessibilityLabel="Ver metadatos"
-          >
-            <Text style={styles.metaButtonText}>ℹ️ Ver metadatos</Text>
-          </Pressable>
+          <View style={styles.metaButtonsRow}>
+            <Pressable
+              onPress={() => setShowMeta(true)}
+              style={styles.metaButton}
+              accessibilityRole="button"
+              accessibilityLabel="Ver metadatos"
+            >
+              <Text style={styles.metaButtonText}>ℹ️ Ver metadatos</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setShowComments(true)}
+              style={styles.metaButton}
+              accessibilityRole="button"
+              accessibilityLabel="Comentarios"
+            >
+              <Text style={styles.metaButtonText}>💬 Comentarios</Text>
+            </Pressable>
+          </View>
         )}
+
+        {showComments ? (
+          <CommentsSheet
+            visible={showComments}
+            photoId={row.id}
+            onClose={() => setShowComments(false)}
+          />
+        ) : null}
 
         <View style={styles.exportRow}>
           <Pressable
@@ -513,6 +533,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   metaButtonText: { color: '#DBEAFE', fontSize: 13, fontWeight: '600' },
+  metaButtonsRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
   exportRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
   exportButton: {
     flex: 1,

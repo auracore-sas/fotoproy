@@ -29,10 +29,12 @@ import {
   completeSyncItem,
   countPendingSync,
   dropSyncItem,
+  getLocalComment,
   getLocalPhoto,
   getLocalPin,
   listNextPendingSync,
   listQueueItemStates,
+  markCommentSynced,
   markPhotoSynced,
   markPinSynced,
   markSyncFailed,
@@ -221,6 +223,10 @@ export class SyncEngine {
         return this.syncPin(item, token);
       }
 
+      if (item.entityType === 'comment') {
+        return this.syncComment(item, token);
+      }
+
       if (item.entityType !== 'photo') {
         // Comments arrive later — never silently retry them forever.
         await dropSyncItem(item.id);
@@ -315,6 +321,35 @@ export class SyncEngine {
   private async markItemUploading(item: SyncQueueItem, entityId: string): Promise<void> {
     await markSyncUploading(item.id);
     this.update({ items: { ...this.snapshotState.items, [entityId]: 'UPLOADING' } });
+  }
+
+  /** Syncs one locally-written comment (F3.6): POST /comments, idempotent. */
+  private async syncComment(item: SyncQueueItem, token: string): Promise<ProcessOutcome> {
+    const comment = await getLocalComment(item.entityId);
+    if (!comment) {
+      await dropSyncItem(item.id); // orphaned queue item
+      await this.refreshState();
+      return 'ok';
+    }
+    this.update({ syncing: true });
+    await this.markItemUploading(item, item.entityId);
+    try {
+      await api.createComment(token, {
+        id: comment.id,
+        photoId: comment.photoId,
+        body: comment.body,
+      });
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 409) {
+        return this.classifyApiError(item, error);
+      }
+      // 409 = already registered on a previous attempt → treat as synced.
+    }
+    await markCommentSynced(comment.id, new Date().toISOString());
+    await completeSyncItem(item.id);
+    this.update({ syncing: false, lastError: null, lastSyncedAt: new Date().toISOString() });
+    await this.refreshState();
+    return 'ok';
   }
 
   /** Syncs one locally-anchored pin (F3.6): POST /pins, idempotent by id. */

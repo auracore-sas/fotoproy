@@ -5,6 +5,8 @@
  */
 import type {
   AuthResponse,
+  Comment,
+  CreateCommentPayload,
   CreatePhotoPayload,
   CreatePinPayload,
   CreatePlanPayload,
@@ -159,5 +161,14 @@ export const api = {
 
   listPlanPins(token: string, planId: string): Promise<Pin[]> {
     return request(`/plans/${planId}/pins`, { token });
+  },
+
+  /** Adds a comment to a photo (append-only, idempotent by id). */
+  createComment(token: string, payload: CreateCommentPayload): Promise<Comment> {
+    return request('/comments', { method: 'POST', token, body: payload });
+  },
+
+  listPhotoComments(token: string, photoId: string): Promise<Comment[]> {
+    return request(`/photos/${photoId}/comments`, { token });
   },
 };

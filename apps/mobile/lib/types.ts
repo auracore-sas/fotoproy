@@ -165,3 +165,18 @@ export interface Pin {
   createdAt: string;
   photo?: PinPhotoSummary;
 }
+
+export interface CreateCommentPayload {
+  id: string;
+  photoId: string;
+  body: string;
+}
+
+export interface Comment {
+  id: string;
+  photoId: string;
+  userId: string | null;
+  authorName: string | null;
+  body: string;
+  createdAt: string;
+}
