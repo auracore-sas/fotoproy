@@ -68,7 +68,7 @@ export function SyncBar() {
 }
 
 function plural(count: number): string {
-  return `${count} ${count === 1 ? 'medio' : 'medios'}`;
+  return `${count} ${count === 1 ? 'pendiente' : 'pendientes'}`;
 }
 
 const styles = StyleSheet.create({

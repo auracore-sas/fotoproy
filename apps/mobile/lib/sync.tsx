@@ -112,6 +112,9 @@ export class SyncEngine {
     this.authError = false;
     // Items stuck in UPLOADING (app killed mid-upload) become retryable.
     await resetStaleUploading();
+    // Items parked by an earlier outage (or by the old give-up policy) get a
+    // fresh chance on every app start — the queue is not a dead letter box.
+    await requeueFailed();
     await this.refreshState();
 
     if (!this.netUnsubscribe) {
@@ -306,6 +309,9 @@ export class SyncEngine {
       }
 
       await completeSyncItem(item.id);
+      // A photo that just landed may unblock dependent comments/pins parked
+      // while waiting for it (see `waitForPhotoUpload`).
+      await requeueFailed();
       this.update({
         syncing: false,
         lastError: null,
@@ -323,6 +329,16 @@ export class SyncEngine {
     this.update({ items: { ...this.snapshotState.items, [entityId]: 'UPLOADING' } });
   }
 
+  /**
+   * True while a locally captured photo referenced by a comment/pin has not
+   * reached the server yet. Posting the dependent entity before its photo
+   * exists fails with 404, so the item waits with transient backoff instead.
+   */
+  private async waitForPhotoUpload(photoId: string): Promise<boolean> {
+    const photo = await getLocalPhoto(photoId);
+    return Boolean(photo && !photo.syncedAt);
+  }
+
   /** Syncs one locally-written comment (F3.6): POST /comments, idempotent. */
   private async syncComment(item: SyncQueueItem, token: string): Promise<ProcessOutcome> {
     const comment = await getLocalComment(item.entityId);
@@ -330,6 +346,9 @@ export class SyncEngine {
       await dropSyncItem(item.id); // orphaned queue item
       await this.refreshState();
       return 'ok';
+    }
+    if (await this.waitForPhotoUpload(comment.photoId)) {
+      return this.failAndSchedule(item, 'Esperando a que la foto se suba');
     }
     this.update({ syncing: true });
     await this.markItemUploading(item, item.entityId);
@@ -341,7 +360,7 @@ export class SyncEngine {
       });
     } catch (error) {
       if (!(error instanceof ApiError) || error.status !== 409) {
-        return this.classifyApiError(item, error);
+        return this.classifyApiError(item, error, { photoDependent: true });
       }
       // 409 = already registered on a previous attempt → treat as synced.
     }
@@ -360,6 +379,9 @@ export class SyncEngine {
       await this.refreshState();
       return 'ok';
     }
+    if (await this.waitForPhotoUpload(pin.photoId)) {
+      return this.failAndSchedule(item, 'Esperando a que la foto se suba');
+    }
     this.update({ syncing: true });
     await this.markItemUploading(item, item.entityId);
     try {
@@ -373,7 +395,7 @@ export class SyncEngine {
       });
     } catch (error) {
       if (!(error instanceof ApiError) || error.status !== 409) {
-        return this.classifyApiError(item, error);
+        return this.classifyApiError(item, error, { photoDependent: true });
       }
       // 409 = already registered on a previous attempt → treat as synced.
     }
@@ -384,8 +406,16 @@ export class SyncEngine {
     return 'ok';
   }
 
-  /** Classifies API errors: 401 → pause, network/5xx → retry, other 4xx → fail. */
-  private async classifyApiError(item: SyncQueueItem, error: unknown): Promise<ProcessOutcome> {
+  /**
+   * Classifies API errors: 401 → pause, network/5xx → retry forever with
+   * backoff, 404 of a dependent entity → retry (its photo may still be on its
+   * way), other 4xx → permanent failure (parked until an explicit retry).
+   */
+  private async classifyApiError(
+    item: SyncQueueItem,
+    error: unknown,
+    options: { photoDependent?: boolean } = {},
+  ): Promise<ProcessOutcome> {
     if (error instanceof ApiError && error.status === 401) {
       this.authError = true;
       this.update({
@@ -394,14 +424,16 @@ export class SyncEngine {
       });
       return 'auth';
     }
-    if (error instanceof ApiError && error.status >= 500) {
-      return this.failAndSchedule(item, error.message);
+    const message = humanError(error);
+    if (error instanceof ApiError && (error.status === 0 || error.status >= 500)) {
+      return this.failAndSchedule(item, message);
     }
-    if (error instanceof ApiError && error.status === 0) {
-      return this.failAndSchedule(item, error.message);
+    if (options.photoDependent && error instanceof ApiError && error.status === 404) {
+      return this.failAndSchedule(item, message);
     }
-    // Permanent validation/authorization failure: keep the badge, retry on demand.
-    await markSyncFailed(item.id, humanError(error), Number.MAX_SAFE_INTEGER);
+    // Permanent validation/authorization failure: park until an explicit retry.
+    await markSyncFailed(item.id, message, item.attempts + 1, true);
+    this.update({ syncing: false, lastError: message });
     await this.refreshState();
     return 'permanent';
   }

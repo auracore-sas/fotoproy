@@ -96,10 +96,10 @@ export interface SyncQueueItem {
   createdAt: string;
 }
 
-/** Auto-retry policy: exponential backoff, then give up until manual retry. */
-export const MAX_SYNC_ATTEMPTS = 6;
-
-/** Backoff delay in ms after `failures` consecutive failures. */
+/**
+ * Backoff policy: exponential delay capped at 60 s. Transient failures retry
+ * forever; permanent ones park the item until an explicit retry.
+ */
 export function backoffDelayMs(failures: number): number {
   return Math.min(1000 * 2 ** failures, 60_000);
 }
@@ -181,19 +181,22 @@ export async function markSyncUploading(queueId: string): Promise<void> {
 }
 
 /**
- * Records a failed attempt with exponential backoff. After MAX_SYNC_ATTEMPTS
- * the item stops being auto-retried (nextAttemptAt = null) until a manual
- * retry resets it.
+ * Records a failed attempt with exponential backoff.
+ *
+ * Transient failures (no connectivity, 5xx) keep a retry timestamp forever
+ * with a capped delay, so a long outage never parks the queue. Permanent
+ * failures (invalid payload, forbidden…) set `nextAttemptAt = null`: they
+ * only run again on an explicit “sync now”.
  */
 export async function markSyncFailed(
   queueId: string,
   message: string,
   failures: number,
+  permanent = false,
 ): Promise<void> {
-  const nextAttemptAt =
-    failures >= MAX_SYNC_ATTEMPTS
-      ? null
-      : new Date(Date.now() + backoffDelayMs(failures)).toISOString();
+  const nextAttemptAt = permanent
+    ? null
+    : new Date(Date.now() + backoffDelayMs(failures)).toISOString();
   await db
     .update(syncQueue)
     .set({ status: 'FAILED', attempts: failures, nextAttemptAt, lastError: message })
