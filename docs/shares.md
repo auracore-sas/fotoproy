@@ -92,25 +92,28 @@ Servida por la propia API, **sin SPA ni build**: HTML + CSS en línea generado e
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `GET /s/:token`                        | Cabecera (organización, proyecto, nº de fotos, vencimiento), descripción y **grilla de thumbnails** (con la estampa de evidencia ya quemada en la imagen); tile → página de la foto. |
 | `GET /s/:token/p/:photoId`             | **Página individual**: imagen a tamaño completo (o reproductor si el medio es video) + fecha, autor, GPS y nota; enlace para volver a la grilla.                                     |
+| `GET /s/:token/media/:photoId`         | **Medio servido por la API** (`?size=thumb` por defecto, `?size=full` para original/video). El HTML nunca apunta al bucket.                                                          |
 | Token vencido / revocado / desconocido | Página de error clara (“Enlace vencido”, “Enlace revocado”, “Enlace no encontrado”) con el mismo código estable del JSON.                                                            |
 
 Detalles de implementación y seguridad:
 
+- **Los medios se sirven a través de la API**, no con URLs firmadas del bucket: así el host de storage nunca se expone en la vista pública y el navegador no puede “ascender” la petición a HTTPS (Chrome sube `http://…:9000` a `https://…:9000`; MinIO local es HTTP puro y las miniaturas quedaban en gris). Los objetos se **streamean** sin cargarlos en memoria (`Cache-Control: private, max-age=300`).
+- El JSON de `GET /s/:token` (clientes de API) sigue entregando URLs firmadas de vida corta; la vista web usa el proxy.
 - Todos los datos de usuario (nombres, descripciones, notas) se **escapan** antes de interpolarse en el HTML.
 - Los enlaces internos son **absolutos** (se construyen con `PUBLIC_BASE_URL` o el host del request), así la página funciona igual servida desde cualquier proxy.
 - Sin JavaScript: funciona en cualquier navegador móvil; `loading="lazy"` en las miniaturas y `preload="none"` en videos.
-- `Cache-Control: no-store` en todas las respuestas públicas; los medios se sirven solo por URLs firmadas de vida corta.
+- `Cache-Control: no-store` en el HTML; los medios van por el proxy con caché privada corta.
 - Marcas: la publicidad y el branding de la organización se muestran como texto (logo queda para el backlog).
 - **Fuera de alcance por ahora**: planos/pines, comentarios, descarga masiva y filtros (ampliación posterior; la decisión MVP #4 sigue vigente).
 
-## 6. Seguridad y límites
+## 7. Seguridad y límites
 
 - Token de 256 bits → inviable de adivinar; hash en BD → una fuga de la tabla no permite reconstruir enlaces.
 - El token determina la organización: **todo** el payload se filtra por `organizationId` del enlace (org-scoping implícito).
 - Rate limiting del endpoint público y cabeceras de caché (`no-store`) quedan como refuerzo en F4.5; el enlace se sirve con `Cache-Control: no-store` desde ya.
-- La vista web (F4.2) no incluirá el UUID de la organización ni datos de otros proyectos.
+- La vista web (F4.2) no incluye el UUID de la organización ni datos de otros proyectos; tampoco expone el host del bucket (los medios se proxean).
 
-## 7. Experiencia en la app (F4.1 móvil)
+## 8. Experiencia en la app (F4.1 móvil)
 
 En el detalle del proyecto (solo ADMIN/SUPERVISOR), acción **“Compartir avance”**:
 
@@ -118,7 +121,7 @@ En el detalle del proyecto (solo ADMIN/SUPERVISOR), acción **“Compartir avanc
 2. Crear el enlace → mostrar la URL y ofrecer compartirla con la hoja nativa del sistema (`Share`).
 3. Lista de enlaces del proyecto con estado (activo/vencido/revocado), fecha de expiración y acción **Revocar** (con confirmación).
 
-## 8. Criterios de aceptación (DoD F4.1 + F4.2)
+## 9. Criterios de aceptación (DoD F4.1 + F4.2)
 
 - [x] Migración `add_shares` aplicada; `pnpm db:migrate` reproducible desde cero.
 - [x] `POST /shares` crea el enlace; `GET /shares?projectId` lista; `DELETE /shares/:id` revoca (idempotente).
@@ -128,6 +131,7 @@ En el detalle del proyecto (solo ADMIN/SUPERVISOR), acción **“Compartir avanc
 - [x] La app muestra la acción solo a ADMIN/SUPERVISOR y permite compartir/revocar el enlace. _(pendiente de validación en dispositivo)_
 - [x] `pnpm lint` en 0, `pnpm typecheck` y `pnpm build` OK; ROADMAP y SPEC actualizados.
 - [x] Un navegador que abre el enlace ve la **vista web** (grilla + página de foto), no JSON.
+- [x] Las miniaturas y las fotos cargan en el navegador (proxy de medios por la API, sin exponer el bucket).
 - [x] Enlace vencido/revocado muestra una página explicativa (no un error técnico).
 
-**Verificación automatizada:** `pnpm smoke:shares` ejecuta el flujo completo contra la API local (crear, listar, leer sin auth, HTML de la vista web, página de foto, revocar, expirar, roles y aislamiento cross-org) con 39 comprobaciones y borra los datos de prueba al terminar.
+**Verificación automatizada:** `pnpm smoke:shares` ejecuta el flujo completo contra la API local (crear, listar, leer sin auth, HTML de la vista web, página de foto, proxy de medios, revocar, expirar, roles y aislamiento cross-org) con 41 comprobaciones y borra los datos de prueba al terminar.
