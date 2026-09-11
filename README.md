@@ -10,14 +10,14 @@ FotoProy es una plataforma móvil (iOS + Android) para **capturar, almacenar, or
 
 ## Estado del proyecto
 
-| Estado            | Detalle                                                                                                                                             |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 📋 Especificación | ✅ **v2.1** — decisiones de producto y stack cerradas ([docs/SPEC.md](docs/SPEC.md))                                                                |
-| 🗺️ Planificación  | ✅ **ROADMAP creado** — 5 fases (F0–F4) hasta el MVP ([ROADMAP.md](ROADMAP.md))                                                                     |
-| 💻 Código         | ✅ **F1 (M1)** · ✅ **F2 (M2)** · ✅ **F3 (M3)** · 🚧 **F4 en curso** — F4.1 enlaces de solo lectura ✅ (backend + móvil); F4.2 vista web pendiente |
+| Estado            | Detalle                                                                                                                                                                                                  |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 📋 Especificación | ✅ **v2.1** — decisiones de producto y stack cerradas ([docs/SPEC.md](docs/SPEC.md))                                                                                                                     |
+| 🗺️ Planificación  | ✅ **ROADMAP creado** — 5 fases (F0–F4) hasta el MVP ([ROADMAP.md](ROADMAP.md))                                                                                                                          |
+| 💻 Código         | ✅ **F1 (M1)** · ✅ **F2 (M2)** · ✅ **F3 (M3)** · 🚧 **F4 en curso** — F4.1 enlaces de solo lectura ✅ y F4.2 vista web ✅ (pendiente validar el enlace en el navegador del teléfono); siguen F4.3–F4.7 |
 
 > [!NOTE]
-> Proyecto en desarrollo — Fases 0–3 completas (M0–M3) y Fase 4 en curso (F4.1 listo). Queda la vista web de los enlaces (F4.2), el despliegue F2.4 y el resto de F4. El estado por fases vive en el [ROADMAP](ROADMAP.md).
+> Proyecto en desarrollo — Fases 0–3 completas (M0–M3) y Fase 4 en curso (F4.1 + F4.2 listos; pendiente la validación del enlace en el teléfono). Queda F4.3–F4.7, el despliegue F2.4 y el visor PDF opcional. El estado por fases vive en el [ROADMAP](ROADMAP.md).
 
 ---
 

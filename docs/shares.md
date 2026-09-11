@@ -123,6 +123,13 @@ En el detalle del proyecto (solo ADMIN/SUPERVISOR), acción **“Compartir avanc
 
 ## 9. Criterios de aceptación (DoD F4.1 + F4.2)
 
+> ⚠️ **Validación pendiente (usuario, siguiente sesión)** — F4.1/F4.2 están implementados y verificados por API/navegador, pero falta la prueba en el dispositivo:
+>
+> 1. En la app (ADMIN o SUPERVISOR): proyecto → **🔗 Compartir avance** → 7 días → **Crear enlace** → **Compartir enlace**.
+> 2. Abrir el enlace en el **navegador del teléfono**: debe verse la grilla con las fotos (no fondo gris), abrir una foto, y volver.
+> 3. **Revocar** ese enlace en la app y recargar el navegador: debe aparecer “Enlace revocado”.
+> 4. Marcar aquí el resultado y, si funciona, cerrar el pendiente en [ROADMAP](../ROADMAP.md) (Fase 4).
+
 - [x] Migración `add_shares` aplicada; `pnpm db:migrate` reproducible desde cero.
 - [x] `POST /shares` crea el enlace; `GET /shares?projectId` lista; `DELETE /shares/:id` revoca (idempotente).
 - [x] `GET /s/:token` responde 200 con el payload de solo lectura, 404 con token inválido, 410 vencido/revocado.
