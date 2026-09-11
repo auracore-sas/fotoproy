@@ -10,6 +10,7 @@ import { PhotosModule } from './photos/photos.module.js';
 import { PlansModule } from './plans/plans.module.js';
 import { PinsModule } from './pins/pins.module.js';
 import { CommentsModule } from './comments/comments.module.js';
+import { SharesModule } from './shares/shares.module.js';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { CommentsModule } from './comments/comments.module.js';
     PlansModule,
     PinsModule,
     CommentsModule,
+    SharesModule,
   ],
 })
 export class AppModule {}

@@ -53,6 +53,7 @@ model Organization {
 
   users    User[]
   projects Project[]
+  shares   Share[]
 
   @@map("organizations")
 }
@@ -68,15 +69,18 @@ model User {
   email          String        @unique
   passwordHash   String
   fullName       String
-  /** Short professional signature burned on photos (initials / nickname). */
+  /**
+   * Short professional signature burned on photos (initials / nickname).
+   */
   signature      String?
   role           Role          @default(TECHNICIAN)
   isActive       Boolean       @default(true)
   createdAt      DateTime      @default(now())
 
-  photos       Photo[]
-  comments     PhotoComment[]
-  createdPins  PhotoPin[]      @relation("PinsByUser")
+  photos        Photo[]
+  comments      PhotoComment[]
+  createdPins   PhotoPin[]     @relation("PinsByUser")
+  createdShares Share[]        @relation("SharesByUser")
 
   @@map("users")
 }
@@ -99,6 +103,7 @@ model Project {
 
   plans  ProjectPlan[]
   photos Photo[]
+  shares Share[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -110,15 +115,15 @@ model Project {
 // ---------------------------------------------------------------------------
 
 model ProjectPlan {
-  id                   String    @id @default(uuid())
-  projectId            String
-  project              Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  title                String
-  storageKey           String // R2 object key of the uploaded plan file
-  thumbnailStorageKey  String? // R2 object key of the generated JPEG thumbnail (IMAGE plans)
-  pageCount            Int       @default(1)
-  planKind             PlanKind  @default(IMAGE)
-  createdAt            DateTime  @default(now())
+  id                  String   @id @default(uuid())
+  projectId           String
+  project             Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title               String
+  storageKey          String // R2 object key of the uploaded plan file
+  thumbnailStorageKey String? // R2 object key of the generated JPEG thumbnail (IMAGE plans)
+  pageCount           Int      @default(1)
+  planKind            PlanKind @default(IMAGE)
+  createdAt           DateTime @default(now())
 
   pins PhotoPin[]
 
@@ -131,21 +136,21 @@ model ProjectPlan {
 // ---------------------------------------------------------------------------
 
 model Photo {
-  id                   String    @id
-  projectId            String
-  project              Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  userId               String?
-  user                 User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  kind                 MediaKind @default(PHOTO)
-  durationMs           Int? // Video duration in ms (kind VIDEO)
-  storageKey           String // R2 object key of the original media
-  thumbnailStorageKey  String? // R2 object key of the generated WebP thumbnail
-  latitude             Decimal?  @db.Decimal(10, 7) // Device GPS (optional)
-  longitude            Decimal?  @db.Decimal(10, 7)
-  altitude             Decimal?  @db.Decimal(8, 2)
-  notes                String?
-  capturedAt           DateTime // Client timestamp (may drift while offline)
-  syncedAt             DateTime  @default(now()) // Server timestamp
+  id                  String    @id
+  projectId           String
+  project             Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId              String?
+  user                User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  kind                MediaKind @default(PHOTO)
+  durationMs          Int? // Video duration in ms (kind VIDEO)
+  storageKey          String // R2 object key of the original media
+  thumbnailStorageKey String? // R2 object key of the generated WebP thumbnail
+  latitude            Decimal?  @db.Decimal(10, 7) // Device GPS (optional)
+  longitude           Decimal?  @db.Decimal(10, 7)
+  altitude            Decimal?  @db.Decimal(8, 2)
+  notes               String?
+  capturedAt          DateTime // Client timestamp (may drift while offline)
+  syncedAt            DateTime  @default(now()) // Server timestamp
 
   pins     PhotoPin[]
   comments PhotoComment[]
@@ -160,17 +165,17 @@ model Photo {
 // ---------------------------------------------------------------------------
 
 model PhotoPin {
-  id          String       @id
+  id          String      @id
   planId      String
-  plan        ProjectPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
+  plan        ProjectPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
   photoId     String
-  photo       Photo        @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  photo       Photo       @relation(fields: [photoId], references: [id], onDelete: Cascade)
   createdById String?
-  createdBy   User?        @relation("PinsByUser", fields: [createdById], references: [id], onDelete: SetNull)
-  pageNumber  Int          @default(1)
-  xPercentage Decimal      @db.Decimal(5, 2) // 0.00 – 100.00
-  yPercentage Decimal      @db.Decimal(5, 2)
-  createdAt   DateTime     @default(now())
+  createdBy   User?       @relation("PinsByUser", fields: [createdById], references: [id], onDelete: SetNull)
+  pageNumber  Int         @default(1)
+  xPercentage Decimal     @db.Decimal(5, 2) // 0.00 – 100.00
+  yPercentage Decimal     @db.Decimal(5, 2)
+  createdAt   DateTime    @default(now())
 
   @@index([planId])
   @@index([photoId])
@@ -192,4 +197,31 @@ model PhotoComment {
 
   @@index([photoId, createdAt])
   @@map("photo_comments")
+}
+
+// ---------------------------------------------------------------------------
+// Read-only share links (F4.1) — public token, revoked/expired by timestamp
+// ---------------------------------------------------------------------------
+
+model Share {
+  id             String       @id
+  projectId      String
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /**
+   * SHA-256 hex digest of the public token — the raw token is never stored.
+   */
+  tokenHash      String       @unique
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdById    String?
+  createdBy      User?        @relation("SharesByUser", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+  lastAccessAt   DateTime?
+  accessCount    Int          @default(0)
+
+  @@index([projectId])
+  @@index([organizationId])
+  @@map("shares")
 }
