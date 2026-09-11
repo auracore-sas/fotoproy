@@ -103,11 +103,11 @@
 
 ---
 
-## Fase 3 — Planos, anclaje de pines, galería y comentarios (semanas 7–9)
+## Fase 3 — Planos, anclaje de pines, galería y comentarios (semanas 7–9) ✅ Completada (M3) — 2026-09-10
 
-**DoD global F3 = M3.**
+**DoD global F3 = M3.** ✅ Cumplido: subir plano-imagen → tocar un punto y anclar una foto → el pin persiste sincronizado → comentar una foto; todo validado en dispositivo, incluidos comentarios y pines creados **sin conexión** que suben solos al reconectar.
 
-> ✅ **Fase 3 COMPLETA (backend + móvil) — 2026-09-06**: F3.1–F3.6 implementados y verificados (API por curl: 403/404/409/400; móvil probado por el usuario en dispositivo: planos-imagen lista/subida/visor con zoom, toque→(x%,y%) y anclaje de pines, pines sobre el plano, grilla de fotos del plano, filtros de galería por autor/fecha/plano; comentarios y anclaje/comentarios offline recién implementados — **pendiente de validar en dispositivo**). Pendientes globales: **visor de PDF** (spike F3.0, opcional para el MVP — planos-imagen cubren M3), **F2.4 despliegue** (credenciales R2 + dominio) y cierre documental de M3.
+> ✅ **Fase 3 CERRADA (M3) — 2026-09-10**: F3.1–F3.6 implementados y verificados (API por curl: 403/404/409/400; móvil en dispositivo: planos-imagen lista/subida/visor con zoom, toque→(x%,y%) y anclaje de pines, pines sobre el plano, grilla de fotos del plano, filtros de galería por autor/fecha/plano). **Comentarios y anclaje/comentarios offline validados en dispositivo el 2026-09-10**, junto con el endurecimiento del motor de sync (v1.24). Tag: `v0.2.0-m3`. Pendientes globales: **visor de PDF** (spike F3.0, opcional para el MVP — planos-imagen cubren M3), **F2.4 despliegue** (credenciales R2 + dominio) y **Fase 4**.
 
 - [x] **F3.0** **Spike técnico** — Decisión (2026-09-05): **WebView + pdf.js para PDF multipágina** (funciona en Expo Go; `react-native-pdf` exige dev client/EAS → se re-evalúa en F4). El PoC de toque→(x%,y%) se entregó dentro del visor F3.2/F3.3 y funciona con planos-imagen; el visor PDF queda **opcional post-MVP**.
 - [x] **F3.1** **Plans API**: `POST /plans/presign` + `POST /plans` (idempotente por UUID cliente, 409 si cambia la clave; roles ADMIN/SUPERVISOR; thumbnail JPEG async para IMAGE) y `GET /plans?projectId` / `GET /plans/:id` con URLs firmadas. **Reemplazo** = se crea un plan nuevo (los pins viejos siguen apuntando a su plan). Migración `plans_storage_keys` (storageKey/thumbnailStorageKey).
@@ -186,6 +186,7 @@ Orden sugerido (P0 = primero cuando se valide en campo):
 
 ## Registro de cambios
 
+- **v1.24 (2026-09-10):** cierre de **M3** + endurecimiento del motor de sync tras prueba en dispositivo (tag `v0.2.0-m3`): los fallos **transitorios** (sin red / 5xx) ya no aparcan la cola —reintentan siempre con backoff exponencial, tope 60 s— y solo los 4xx reales esperan un reintento manual; **comentarios y pines ahora esperan** a que su foto exista en el servidor (antes un 404 los marcaba como fallo permanente) y se **reencolan solos** al arrancar la app y al terminar cada subida de foto; el error que muestra la barra siempre es el del último intento y el texto pasa a “N pendientes” (antes “medios”, contaba comentarios y pines). Validado en dispositivo: 4 comentarios creados offline subieron al reconectar. Diagnóstico de partida: backend apagado 3 días → cola aparcada por la política anterior de “6 intentos y abandona”.
 - **v1.23 (2026-09-06):** cierre documental del avance — Fase 3 implementada (backend + móvil). AGENTS.md (estado + sección 8) y README actualizados al estado F1✅ M1 · F2✅ M2 · F3⏳ (pendiente: validar comentarios en dispositivo, visor PDF opcional, F2.4 despliegue, Fase 4).
 - **v1.22 (2026-09-06):** F3.5/F3.6 — **comentarios en fotos**: hoja 💬 en el visor (lista autor + hora relativa, pendientes ⏫), compositor **offline-first** (local + cola, intento online inmediato; el motor de sync ya sube `comment` con 409=éxito) y merge servidor↔local por id. F3.6 cerrado para pins y comentarios (append-only, sin conflictos).
 - **v1.21 (2026-09-06):** F3.4 — **fotos del plano**: grilla con todas las fotos ancladas (desde pines sincronizados, con coordenadas %) accesible con 📋 desde el visor; **filtros de galería** por autor (todas / mías / equipo), por fecha (últimos 7/30 días) y por plano (ids de pines locales + servidor). Estado vacío distinto cuando hay filtros activos.

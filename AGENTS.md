@@ -17,7 +17,7 @@
 | [README.md](README.md)       | Inicio rápido + comandos.                                                                                                    |
 | [AGENTS.md](AGENTS.md)       | Este archivo: reglas y flujos.                                                                                               |
 
-**Estado actual:** Fase 0 ✅ (M0) · Fase 1 ✅ (M1) · **Fase 2 ✅ (M2)** — storage S3-compatible (MinIO dev / R2 prod) con pre-signed URLs, photos idempotentes org-scoped con thumbnails JPEG, motor de sync offline-first (FIFO + backoff, NetInfo, UI de pendientes, galería en línea) — validado en dispositivo. **Fase 3 ⏳ implementada (backend + móvil) — M3 pendiente de cierre**: planos (subida/progreso, visor con zoom, lista), **anclaje de fotos por toque → pines (x%,y%)** local-first con sync, pines sobre el plano, fotos del plano, filtros de galería (autor/fecha/plano) y comentarios offline-first. Pendientes globales: validar comentarios en dispositivo, visor PDF (opcional), **F2.4 despliegue** (R2 + dominio del usuario) y Fase 4. Ver ROADMAP para detalle.
+**Estado actual:** Fase 0 ✅ (M0) · Fase 1 ✅ (M1) · **Fase 2 ✅ (M2)** — storage S3-compatible (MinIO dev / R2 prod) con pre-signed URLs, photos idempotentes org-scoped con thumbnails JPEG, motor de sync offline-first (FIFO + backoff, NetInfo, UI de pendientes, galería en línea) — validado en dispositivo. **Fase 3 ✅ (M3, tag `v0.2.0-m3`)**: planos (subida/progreso, visor con zoom, lista), **anclaje de fotos por toque → pines (x%,y%)** local-first con sync, pines sobre el plano, fotos del plano, filtros de galería (autor/fecha/plano) y comentarios offline-first — validado en dispositivo (incl. cola offline que sube sola al reconectar; v1.24). Pendientes globales: visor PDF (opcional), **F2.4 despliegue** (R2 + dominio del usuario) y **Fase 4**. Ver ROADMAP para detalle.
 
 ---
 
@@ -151,14 +151,15 @@ cd packages/database
 
 ---
 
-## 8. Fase 3 (en curso) — qué queda y cómo cerrar M3
+## 8. Fase 3 (cerrada — M3) — qué quedó y qué sigue
 
-Ver tareas F3.0–F3.6 del ROADMAP. **Implementado** (backend a55d312; móvil 0398321 → ce3b7e9):
+Ver tareas F3.0–F3.6 del ROADMAP. **Implementado** (backend a55d312; móvil 0398321 → ce3b7e9; endurecimiento del sync en v1.24):
 
 - **Planos**: `POST /plans/presign` + `POST /plans` (idempotente, 409 en conflicto, roles ADMIN/SUPERVISOR, thumbnail JPEG async) y `GET /plans…`; móvil: lista, subida con progreso (expo-image-picker + `createUploadTask`), visor fullscreen con zoom/pan y cálculo de toque→(x%,y%).
 - **Pines (append-only, offline-first)**: POST /pins + GET /plans/:id/pins (foto firmada); móvil: tocar el plano → “usar foto existente”/“tomar foto ahora” → pin local + cola (motor procesa `pin`; 409 = éxito); pines rojos (sync) / ámbar (⏫ pendientes); tocar abre la foto. **Fotos del plano** (grilla 📋) y **filtros de galería** (autor/fecha/plano).
 - **Comentarios**: POST/comments + list con authorName; hoja 💬 en el visor, offline-first (motor procesa `comment`).
-- **Pendiente**: validar comentarios en dispositivo · visor **PDF** (spike F3.0: WebView+pdf.js; opcional, planos-imagen cubren M3) · **F2.4 despliegue** (R2 real + dominio) · luego Fase 4 (F4.1 enlaces de solo lectura).
+- **Motor de sync (v1.24)**: fallos transitorios (sin red/5xx) reintentan siempre con backoff (tope 60 s) y no aparcan la cola; los 4xx reales sí se aparcan hasta un reintento manual; comentarios/pines **esperan** a que su foto exista en el servidor; al arrancar la app y al terminar cada foto se reencolan los pendientes. Si la cola no avanza: revisar que el backend esté arriba (`curl localhost:4100/health`) antes de sospechar del código.
+- **Pendiente**: visor **PDF** (spike F3.0: WebView+pdf.js; opcional, planos-imagen cubren M3) · **F2.4 despliegue** (R2 real + dominio) · Fase 4 (F4.1 enlaces de solo lectura).
 - `apps/mobile` tiene script `typecheck`: mantenerlo en verde junto al resto (`pnpm -r typecheck`).
 
 ---

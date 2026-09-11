@@ -10,14 +10,14 @@ FotoProy es una plataforma móvil (iOS + Android) para **capturar, almacenar, or
 
 ## Estado del proyecto
 
-| Estado            | Detalle                                                                                                                                                     |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 📋 Especificación | ✅ **v2.1** — decisiones de producto y stack cerradas ([docs/SPEC.md](docs/SPEC.md))                                                                        |
-| 🗺️ Planificación  | ✅ **ROADMAP creado** — 5 fases (F0–F4) hasta el MVP ([ROADMAP.md](ROADMAP.md))                                                                             |
-| 💻 Código         | ✅ **F1 (M1)** · ✅ **F2 (M2)** · ⏳ **F3 implementada** — planos, anclaje de pines offline-first, filtros y comentarios (pendiente cerrar M3 y despliegue) |
+| Estado            | Detalle                                                                                                                                   |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 📋 Especificación | ✅ **v2.1** — decisiones de producto y stack cerradas ([docs/SPEC.md](docs/SPEC.md))                                                      |
+| 🗺️ Planificación  | ✅ **ROADMAP creado** — 5 fases (F0–F4) hasta el MVP ([ROADMAP.md](ROADMAP.md))                                                           |
+| 💻 Código         | ✅ **F1 (M1)** · ✅ **F2 (M2)** · ✅ **F3 (M3)**: planos, anclaje de pines offline-first, filtros y comentarios — validado en dispositivo |
 
 > [!NOTE]
-> Proyecto en desarrollo — la Fase 0 (fundación del monorepo) está lista. El estado por fases vive en el [ROADMAP](ROADMAP.md).
+> Proyecto en desarrollo — Fases 0–3 completas (M0–M3). Queda Fase 4 (compartir, QA, distribución) y el despliegue F2.4. El estado por fases vive en el [ROADMAP](ROADMAP.md).
 
 ---
 
