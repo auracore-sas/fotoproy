@@ -87,12 +87,15 @@ export function renderProjectPage(
   const { project, photos, expiresAt } = payload;
   const tiles = photos
     .map((photo) => {
+      // Media is proxied by the API (see `streamPublicMedia`): the bucket host
+      // stays private and browsers cannot upgrade the request to HTTPS.
+      const mediaUrl = `${baseUrl}/s/${token}/media/${photo.id}`;
       const media =
         photo.kind === 'VIDEO'
-          ? `<video src="${escapeAttr(photo.url)}" ${
-              photo.thumbnailUrl ? `poster="${escapeAttr(photo.thumbnailUrl)}"` : ''
-            } preload="none" muted playsinline></video>`
-          : `<img src="${escapeAttr(photo.thumbnailUrl ?? photo.url)}" alt="${escapeAttr(
+          ? `<video src="${escapeAttr(`${mediaUrl}?size=full`)}" poster="${escapeAttr(
+              mediaUrl,
+            )}" preload="none" muted playsinline></video>`
+          : `<img src="${escapeAttr(mediaUrl)}" alt="${escapeAttr(
               `Foto del ${formatDateTime(photo.capturedAt)}`,
             )}" loading="lazy" />`;
       return `<a class="tile" href="${escapeAttr(`${baseUrl}/s/${token}/p/${photo.id}`)}">
@@ -130,12 +133,11 @@ export function renderPhotoPage(
   token: string,
   baseUrl: string,
 ): string {
+  const mediaUrl = `${baseUrl}/s/${token}/media/${photo.id}?size=full`;
   const media =
     photo.kind === 'VIDEO'
-      ? `<video src="${escapeAttr(photo.url)}" controls ${
-          photo.thumbnailUrl ? `poster="${escapeAttr(photo.thumbnailUrl)}"` : ''
-        } playsinline></video>`
-      : `<img src="${escapeAttr(photo.url)}" alt="${escapeAttr(
+      ? `<video src="${escapeAttr(mediaUrl)}" controls playsinline></video>`
+      : `<img src="${escapeAttr(mediaUrl)}" alt="${escapeAttr(
           `Foto del ${formatDateTime(photo.capturedAt)}`,
         )}" />`;
 

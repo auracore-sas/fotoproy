@@ -10,6 +10,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import type { Readable } from 'node:stream';
 
 export interface StorageConfig {
   endpoint: string;
@@ -134,6 +135,28 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
       throw new Error(`Object "${key}" is empty`);
     }
     return Buffer.from(bytes);
+  }
+
+  /**
+   * Streams an object without buffering it in memory (used by the public web
+   * view, which proxies media so the bucket host is never exposed).
+   */
+  async getObjectStream(key: string): Promise<{
+    body: Readable;
+    contentType?: string;
+    contentLength?: number;
+  }> {
+    const response = await this.client.send(
+      new GetObjectCommand({ Bucket: this.config.bucket, Key: key }),
+    );
+    if (!response.Body) {
+      throw new Error(`Object "${key}" has no body`);
+    }
+    return {
+      body: response.Body as Readable,
+      contentType: response.ContentType,
+      contentLength: response.ContentLength,
+    };
   }
 
   /** Uploads bytes to the given object key (server-side operations only). */

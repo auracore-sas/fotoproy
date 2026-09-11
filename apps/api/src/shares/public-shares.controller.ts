@@ -1,4 +1,4 @@
-import { Controller, Get, HttpException, Param, Req, Res } from '@nestjs/common';
+import { Controller, Get, HttpException, Param, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type { ShareErrorCode } from '@fotoproy/shared';
 import { SHARE_ERROR_CODES } from '@fotoproy/shared';
@@ -99,6 +99,33 @@ export class PublicSharesController {
       }
     } catch (error) {
       this.respondError(response, error, html);
+    }
+  }
+
+  @Public()
+  @Get(':token/media/:photoId')
+  async media(
+    @Param('token') token: string,
+    @Param('photoId') photoId: string,
+    @Query('size') size: string | undefined,
+    @Res() response: Response,
+  ): Promise<void> {
+    // Public pages must never be cached by shared proxies: the link can be revoked.
+    response.setHeader('Cache-Control', 'private, max-age=300');
+    try {
+      const media = await this.sharesService.streamPublicMedia(
+        token,
+        photoId,
+        size === 'full' ? 'full' : 'thumb',
+      );
+      response.setHeader('Content-Type', media.contentType);
+      if (media.contentLength !== undefined) {
+        response.setHeader('Content-Length', String(media.contentLength));
+      }
+      media.body.on('error', () => response.destroy());
+      media.body.pipe(response);
+    } catch (error) {
+      this.respondError(response, error, false);
     }
   }
 

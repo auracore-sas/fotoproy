@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { Readable } from 'node:stream';
 import { GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Share as DbShare } from '@fotoproy/database';
@@ -14,6 +15,28 @@ import type { AuthedUser } from '../common/interfaces/auth-user.interface.js';
 import { generateShareToken, hashShareToken, isPlausibleShareToken } from './share-token.js';
 import { resolvePublicBaseUrl, type RequestLike } from './public-url.js';
 import { renderPhotoPage, renderProjectPage } from './share-page.js';
+
+/** Content type by file extension (storage may not report one). */
+function contentTypeForKey(key: string): string {
+  const ext = key.slice(key.lastIndexOf('.') + 1).toLowerCase();
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'webp':
+      return 'image/webp';
+    case 'heic':
+      return 'image/heic';
+    case 'mp4':
+      return 'video/mp4';
+    case 'mov':
+      return 'video/quicktime';
+    default:
+      return 'application/octet-stream';
+  }
+}
 
 /**
  * F4.1 — read-only share links.
@@ -84,25 +107,7 @@ export class SharesService {
    * or expired.
    */
   async viewPublic(token: string): Promise<SharedProjectPayload> {
-    if (!isPlausibleShareToken(token)) {
-      throw new NotFoundException({ code: 'SHARE_NOT_FOUND', message: 'Share link not found' });
-    }
-
-    const share = await this.prisma.share.findUnique({
-      where: { tokenHash: hashShareToken(token) },
-      include: {
-        project: { include: { organization: { select: { legalName: true, tradeName: true } } } },
-      },
-    });
-    if (!share) {
-      throw new NotFoundException({ code: 'SHARE_NOT_FOUND', message: 'Share link not found' });
-    }
-    if (share.revokedAt !== null) {
-      throw new GoneException({ code: 'SHARE_REVOKED', message: 'This share link was revoked' });
-    }
-    if (share.expiresAt.getTime() <= Date.now()) {
-      throw new GoneException({ code: 'SHARE_EXPIRED', message: 'This share link has expired' });
-    }
+    const share = await this.resolveShare(token);
 
     const photos = await this.prisma.photo.findMany({
       where: { projectId: share.projectId },
@@ -145,6 +150,60 @@ export class SharesService {
         })),
       ),
     };
+  }
+
+  /**
+   * Streams a photo (or its thumbnail) for the public web view.
+   *
+   * The page never points at the storage host: media is proxied through the
+   * API, so browsers enforce no HTTPS upgrade on the bucket and the bucket
+   * address stays private. The token still gates every request.
+   */
+  async streamPublicMedia(
+    token: string,
+    photoId: string,
+    variant: 'thumb' | 'full',
+  ): Promise<{ body: Readable; contentType: string; contentLength?: number }> {
+    const share = await this.resolveShare(token);
+    const photo = await this.prisma.photo.findFirst({
+      where: { id: photoId, projectId: share.projectId },
+      select: { storageKey: true, thumbnailStorageKey: true },
+    });
+    if (!photo) {
+      throw new NotFoundException({ code: 'SHARE_NOT_FOUND', message: 'Photo not found' });
+    }
+    const key =
+      variant === 'thumb' ? (photo.thumbnailStorageKey ?? photo.storageKey) : photo.storageKey;
+    const object = await this.storage.getObjectStream(key);
+    return {
+      body: object.body,
+      contentType: object.contentType ?? contentTypeForKey(key),
+      contentLength: object.contentLength,
+    };
+  }
+
+  /** Resolves a token into a live share (404 unknown, 410 revoked/expired). */
+  private async resolveShare(token: string) {
+    if (!isPlausibleShareToken(token)) {
+      throw new NotFoundException({ code: 'SHARE_NOT_FOUND', message: 'Share link not found' });
+    }
+
+    const share = await this.prisma.share.findUnique({
+      where: { tokenHash: hashShareToken(token) },
+      include: {
+        project: { include: { organization: { select: { legalName: true, tradeName: true } } } },
+      },
+    });
+    if (!share) {
+      throw new NotFoundException({ code: 'SHARE_NOT_FOUND', message: 'Share link not found' });
+    }
+    if (share.revokedAt !== null) {
+      throw new GoneException({ code: 'SHARE_REVOKED', message: 'This share link was revoked' });
+    }
+    if (share.expiresAt.getTime() <= Date.now()) {
+      throw new GoneException({ code: 'SHARE_EXPIRED', message: 'This share link has expired' });
+    }
+    return share;
   }
 
   /** F4.2 — HTML gallery rendered for browsers (`GET /s/:token`). */

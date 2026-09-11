@@ -95,6 +95,8 @@ contains "gallery shows project" "Proyecto F4.1 $TS" /tmp/f41-body.html
 contains "gallery empty state" "Todavía no hay fotos" /tmp/f41-body.html
 check "unknown photo html 404" "404" "$(html "/s/$TOKEN/p/00000000-0000-4000-8000-000000000000")"
 contains "error page copy" "Enlace no encontrado" /tmp/f41-body.html
+check "media proxy 404" "404" "$(code GET "/s/$TOKEN/media/00000000-0000-4000-8000-000000000000")"
+check "media proxy needs valid token" "404" "$(code GET "/s/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/media/00000000-0000-4000-8000-000000000000")"
 
 echo "== 4. TECHNICIAN is forbidden =="
 check "create 403" "403" "$(code POST /shares "$TOKEN_T" "{\"projectId\":\"$PROJECT_ID\"}")"
