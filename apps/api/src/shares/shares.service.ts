@@ -13,6 +13,7 @@ import { StorageService } from '../storage/storage.service.js';
 import type { AuthedUser } from '../common/interfaces/auth-user.interface.js';
 import { generateShareToken, hashShareToken, isPlausibleShareToken } from './share-token.js';
 import { resolvePublicBaseUrl, type RequestLike } from './public-url.js';
+import { renderPhotoPage, renderProjectPage } from './share-page.js';
 
 /**
  * F4.1 — read-only share links.
@@ -146,10 +147,33 @@ export class SharesService {
     };
   }
 
+  /** F4.2 — HTML gallery rendered for browsers (`GET /s/:token`). */
+  async renderProjectPage(token: string, request: RequestLike): Promise<string> {
+    return renderProjectPage(await this.viewPublic(token), token, this.baseUrl(request));
+  }
+
+  /** F4.2 — HTML detail page of one photo of the shared project. */
+  async renderPhotoDetailPage(
+    token: string,
+    photoId: string,
+    request: RequestLike,
+  ): Promise<string> {
+    const payload = await this.viewPublic(token);
+    const photo = payload.photos.find((item) => item.id === photoId);
+    if (!photo) {
+      throw new NotFoundException({ code: 'SHARE_NOT_FOUND', message: 'Photo not found' });
+    }
+    return renderPhotoPage(payload, photo, token, this.baseUrl(request));
+  }
+
   /** Full public link built from the configured base URL (or the request). */
   private linkFor(token: string, request: RequestLike): string {
-    const base = resolvePublicBaseUrl(request, this.config.get<string>('PUBLIC_BASE_URL'));
-    return `${base}/s/${token}`;
+    return `${this.baseUrl(request)}/s/${token}`;
+  }
+
+  /** Base URL for links inside the public pages (absolute, shareable). */
+  private baseUrl(request: RequestLike): string {
+    return resolvePublicBaseUrl(request, this.config.get<string>('PUBLIC_BASE_URL'));
   }
 
   private async requireProject(organizationId: string, projectId: string): Promise<void> {

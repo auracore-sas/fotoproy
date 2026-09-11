@@ -1,14 +1,54 @@
-import { Controller, Get, Param, Res } from '@nestjs/common';
-import type { Response } from 'express';
-import type { SharedProjectPayload } from '@fotoproy/shared';
+import { Controller, Get, HttpException, Param, Req, Res } from '@nestjs/common';
+import type { Request, Response } from 'express';
+import type { ShareErrorCode } from '@fotoproy/shared';
+import { SHARE_ERROR_CODES } from '@fotoproy/shared';
 import { Public } from '../common/decorators/public.decorator.js';
 import { SharesService } from './shares.service.js';
+import { renderErrorPage } from './share-page.js';
+
+/** Browser requests (`Accept: text/html…`) get the rendered page. */
+function prefersHtml(accept: string | undefined): boolean {
+  if (!accept) {
+    return false;
+  }
+  return accept.includes('text/html');
+}
+
+interface ShareErrorLike {
+  status: number;
+  code: ShareErrorCode;
+}
+
+function toShareErrorCode(value: unknown, fallback: ShareErrorCode): ShareErrorCode {
+  return typeof value === 'string' && (SHARE_ERROR_CODES as readonly string[]).includes(value)
+    ? (value as ShareErrorCode)
+    : fallback;
+}
+
+/** Maps a thrown HTTP exception to a status + stable share error code. */
+function asShareError(error: unknown): ShareErrorLike {
+  if (error instanceof HttpException) {
+    const status = error.getStatus();
+    const response = error.getResponse();
+    const rawCode =
+      typeof response === 'object' && response !== null && 'code' in response
+        ? (response as { code: unknown }).code
+        : undefined;
+    return {
+      status,
+      code: toShareErrorCode(rawCode, status === 410 ? 'SHARE_EXPIRED' : 'SHARE_NOT_FOUND'),
+    };
+  }
+  return { status: 500, code: 'SHARE_NOT_FOUND' };
+}
 
 /**
- * Public share endpoint — no authentication.
+ * Public share endpoints — no authentication.
  *
- * The response is the JSON payload the web view (F4.2) renders. Dead links
- * answer 410 with a stable `code` so the page can explain what happened.
+ * `GET /s/:token` answers HTML to browsers and JSON to API clients
+ * (`Accept: application/json`), so the same URL is both the page the client
+ * opens and the payload any integration can read. `GET /s/:token/p/:photoId`
+ * is the individual photo page.
  */
 @Controller('s')
 export class PublicSharesController {
@@ -18,9 +58,56 @@ export class PublicSharesController {
   @Get(':token')
   async view(
     @Param('token') token: string,
-    @Res({ passthrough: true }) response: Response,
-  ): Promise<SharedProjectPayload> {
+    @Req() request: Request,
+    @Res() response: Response,
+  ): Promise<void> {
     response.setHeader('Cache-Control', 'no-store');
-    return this.sharesService.viewPublic(token);
+    const html = prefersHtml(request.headers.accept);
+    try {
+      if (html) {
+        response.type('html').send(await this.sharesService.renderProjectPage(token, request));
+      } else {
+        response.json(await this.sharesService.viewPublic(token));
+      }
+    } catch (error) {
+      this.respondError(response, error, html);
+    }
+  }
+
+  @Public()
+  @Get(':token/p/:photoId')
+  async viewPhoto(
+    @Param('token') token: string,
+    @Param('photoId') photoId: string,
+    @Req() request: Request,
+    @Res() response: Response,
+  ): Promise<void> {
+    response.setHeader('Cache-Control', 'no-store');
+    const html = prefersHtml(request.headers.accept);
+    try {
+      if (html) {
+        response
+          .type('html')
+          .send(await this.sharesService.renderPhotoDetailPage(token, photoId, request));
+      } else {
+        const payload = await this.sharesService.viewPublic(token);
+        const photo = payload.photos.find((item) => item.id === photoId);
+        if (!photo) {
+          throw new HttpException({ code: 'SHARE_NOT_FOUND', message: 'Photo not found' }, 404);
+        }
+        response.json(photo);
+      }
+    } catch (error) {
+      this.respondError(response, error, html);
+    }
+  }
+
+  private respondError(response: Response, error: unknown, html: boolean): void {
+    const { status, code } = asShareError(error);
+    if (!html) {
+      response.status(status).json({ statusCode: status, code, message: 'Share link error' });
+      return;
+    }
+    response.status(status).type('html').send(renderErrorPage(code));
   }
 }
