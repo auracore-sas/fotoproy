@@ -10,14 +10,15 @@
 
 **FotoProy** = documentación fotográfica de proyectos de construcción: capturar, almacenar, organizar (fotos ancladas sobre planos/mapas) y compartir (enlaces de solo lectura) fotos ilimitadas de obra, **offline-first**, móvil iOS + Android con un solo código, multi-perfil (civiles, arquitectos, eléctricos, etc.), mercado LATAM.
 
-| Documento                    | Rol                                                                                                                          |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| [docs/SPEC.md](docs/SPEC.md) | Especificación de producto/técnica **v2.1** (decisiones cerradas en §10).                                                    |
-| [ROADMAP.md](ROADMAP.md)     | Plan de implementación: tareas por fase (F0–F4) con checkboxes, DoD, hitos, riesgos, changelog. **Es el tracker de estado.** |
-| [README.md](README.md)       | Inicio rápido + comandos.                                                                                                    |
-| [AGENTS.md](AGENTS.md)       | Este archivo: reglas y flujos.                                                                                               |
+| Documento                        | Rol                                                                                                                          |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| [docs/SPEC.md](docs/SPEC.md)     | Especificación de producto/técnica **v2.1** (decisiones cerradas en §10).                                                    |
+| [docs/shares.md](docs/shares.md) | Enlaces de solo lectura (F4.1): decisiones, modelo, endpoints y seguridad.                                                   |
+| [ROADMAP.md](ROADMAP.md)         | Plan de implementación: tareas por fase (F0–F4) con checkboxes, DoD, hitos, riesgos, changelog. **Es el tracker de estado.** |
+| [README.md](README.md)           | Inicio rápido + comandos.                                                                                                    |
+| [AGENTS.md](AGENTS.md)           | Este archivo: reglas y flujos.                                                                                               |
 
-**Estado actual:** Fase 0 ✅ (M0) · Fase 1 ✅ (M1) · **Fase 2 ✅ (M2)** — storage S3-compatible (MinIO dev / R2 prod) con pre-signed URLs, photos idempotentes org-scoped con thumbnails JPEG, motor de sync offline-first (FIFO + backoff, NetInfo, UI de pendientes, galería en línea) — validado en dispositivo. **Fase 3 ✅ (M3, tag `v0.2.0-m3`)**: planos (subida/progreso, visor con zoom, lista), **anclaje de fotos por toque → pines (x%,y%)** local-first con sync, pines sobre el plano, fotos del plano, filtros de galería (autor/fecha/plano) y comentarios offline-first — validado en dispositivo (incl. cola offline que sube sola al reconectar; v1.24). Pendientes globales: visor PDF (opcional), **F2.4 despliegue** (R2 + dominio del usuario) y **Fase 4**. Ver ROADMAP para detalle.
+**Estado actual:** Fase 0 ✅ (M0) · Fase 1 ✅ (M1) · **Fase 2 ✅ (M2)** — storage S3-compatible (MinIO dev / R2 prod) con pre-signed URLs, photos idempotentes org-scoped con thumbnails JPEG, motor de sync offline-first (FIFO + backoff, NetInfo, UI de pendientes, galería en línea) — validado en dispositivo. **Fase 3 ✅ (M3, tag `v0.2.0-m3`)**: planos (subida/progreso, visor con zoom, lista), **anclaje de fotos por toque → pines (x%,y%)** local-first con sync, pines sobre el plano, fotos del plano, filtros de galería (autor/fecha/plano) y comentarios offline-first — validado en dispositivo (incl. cola offline que sube sola al reconectar; v1.24). **Fase 4 🚧 en curso**: **F4.1 ✅** enlaces de solo lectura (token hasheado, expiración, revocar, endpoint público `GET /s/:token`, pantalla “Compartir avance”; spec en [docs/shares.md](docs/shares.md)); pendiente F4.2 vista web, visor PDF (opcional), **F2.4 despliegue** (R2 + dominio del usuario) y el resto de F4. Ver ROADMAP para detalle.
 
 ---
 
@@ -159,7 +160,7 @@ Ver tareas F3.0–F3.6 del ROADMAP. **Implementado** (backend a55d312; móvil 03
 - **Pines (append-only, offline-first)**: POST /pins + GET /plans/:id/pins (foto firmada); móvil: tocar el plano → “usar foto existente”/“tomar foto ahora” → pin local + cola (motor procesa `pin`; 409 = éxito); pines rojos (sync) / ámbar (⏫ pendientes); tocar abre la foto. **Fotos del plano** (grilla 📋) y **filtros de galería** (autor/fecha/plano).
 - **Comentarios**: POST/comments + list con authorName; hoja 💬 en el visor, offline-first (motor procesa `comment`).
 - **Motor de sync (v1.24)**: fallos transitorios (sin red/5xx) reintentan siempre con backoff (tope 60 s) y no aparcan la cola; los 4xx reales sí se aparcan hasta un reintento manual; comentarios/pines **esperan** a que su foto exista en el servidor; al arrancar la app y al terminar cada foto se reencolan los pendientes. Si la cola no avanza: revisar que el backend esté arriba (`curl localhost:4100/health`) antes de sospechar del código.
-- **Pendiente**: visor **PDF** (spike F3.0: WebView+pdf.js; opcional, planos-imagen cubren M3) · **F2.4 despliegue** (R2 real + dominio) · Fase 4 (F4.1 enlaces de solo lectura).
+- **Pendiente**: **F4.2 vista web mínima** de los enlaces (HTML server-rendered sobre `GET /s/:token`) · visor **PDF** (spike F3.0: WebView+pdf.js; opcional) · **F2.4 despliegue** (R2 real + dominio; sin dominio el enlace usa la IP de LAN en dev) · resto de Fase 4 (F4.3–F4.7).
 - `apps/mobile` tiene script `typecheck`: mantenerlo en verde junto al resto (`pnpm -r typecheck`).
 
 ---
