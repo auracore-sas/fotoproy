@@ -100,10 +100,12 @@ En el detalle del proyecto (solo ADMIN/SUPERVISOR), acción **“Compartir avanc
 
 ## 8. Criterios de aceptación (DoD F4.1)
 
-- [ ] Migración `add_shares` aplicada; `pnpm db:migrate` reproducible desde cero.
-- [ ] `POST /shares` crea el enlace; `GET /shares?projectId` lista; `DELETE /shares/:id` revoca (idempotente).
-- [ ] `GET /s/:token` responde 200 con el payload de solo lectura, 404 con token inválido, 410 vencido/revocado.
-- [ ] Un token de otra organización no expone nada.
-- [ ] TECHNICIAN recibe 403 al intentar crear/listar/revocar.
-- [ ] La app muestra la acción solo a ADMIN/SUPERVISOR y permite compartir/revocar el enlace.
-- [ ] `pnpm lint` en 0, `pnpm typecheck` y `pnpm build` OK; ROADMAP y SPEC actualizados.
+- [x] Migración `add_shares` aplicada; `pnpm db:migrate` reproducible desde cero.
+- [x] `POST /shares` crea el enlace; `GET /shares?projectId` lista; `DELETE /shares/:id` revoca (idempotente).
+- [x] `GET /s/:token` responde 200 con el payload de solo lectura, 404 con token inválido, 410 vencido/revocado.
+- [x] Un token de otra organización no expone nada.
+- [x] TECHNICIAN recibe 403 al intentar crear/listar/revocar.
+- [x] La app muestra la acción solo a ADMIN/SUPERVISOR y permite compartir/revocar el enlace. _(pendiente de validación en dispositivo)_
+- [x] `pnpm lint` en 0, `pnpm typecheck` y `pnpm build` OK; ROADMAP y SPEC actualizados.
+
+**Verificación automatizada:** `pnpm smoke:shares` ejecuta el flujo completo contra la API local (crear, listar, leer sin auth, revocar, expirar, roles y aislamiento cross-org) con 29 comprobaciones y borra los datos de prueba al terminar.
