@@ -51,9 +51,9 @@ Estados derivados (no se almacenan): `ACTIVE` (`revokedAt = null` y `expiresAt >
 
 El `token` en claro solo se devuelve en la creación: el enlace completo (`url`) también. La lista no lo expone (solo su estado).
 
-## 5. API — endpoint público (sin auth)
+## 5. API — endpoints públicos (sin auth)
 
-`GET /s/:token` — devuelve el JSON que consumirá la vista web F4.2:
+`GET /s/:token` — **negociación de contenido**: los navegadores (`Accept: text/html…`) reciben la **vista web** (F4.2, ver §6); los clientes de API (`Accept: application/json`) reciben el JSON de solo lectura que alimenta esa misma vista:
 
 ```jsonc
 {
@@ -82,6 +82,26 @@ Reglas:
 - Cada acceso actualiza `lastAccessAt` y `accessCount` (best-effort, no bloquea la respuesta).
 - Las URLs de fotos/thumbnails se firman en cada request (TTL de `STORAGE_SIGNED_URL_TTL`), nunca se cachean en la BD.
 - Sin paginación en el MVP (fotos ilimitadas es promesa del producto); si un proyecto llega a miles de fotos se añadirá paginación por cursor.
+- Errores: con `Accept: text/html` la respuesta es una **página** de error (no JSON); con JSON el mismo `code` estable.
+
+## 6. Vista web (F4.2)
+
+Servida por la propia API, **sin SPA ni build**: HTML + CSS en línea generado en el servidor.
+
+| Ruta                                   | Contenido                                                                                                                                                                            |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /s/:token`                        | Cabecera (organización, proyecto, nº de fotos, vencimiento), descripción y **grilla de thumbnails** (con la estampa de evidencia ya quemada en la imagen); tile → página de la foto. |
+| `GET /s/:token/p/:photoId`             | **Página individual**: imagen a tamaño completo (o reproductor si el medio es video) + fecha, autor, GPS y nota; enlace para volver a la grilla.                                     |
+| Token vencido / revocado / desconocido | Página de error clara (“Enlace vencido”, “Enlace revocado”, “Enlace no encontrado”) con el mismo código estable del JSON.                                                            |
+
+Detalles de implementación y seguridad:
+
+- Todos los datos de usuario (nombres, descripciones, notas) se **escapan** antes de interpolarse en el HTML.
+- Los enlaces internos son **absolutos** (se construyen con `PUBLIC_BASE_URL` o el host del request), así la página funciona igual servida desde cualquier proxy.
+- Sin JavaScript: funciona en cualquier navegador móvil; `loading="lazy"` en las miniaturas y `preload="none"` en videos.
+- `Cache-Control: no-store` en todas las respuestas públicas; los medios se sirven solo por URLs firmadas de vida corta.
+- Marcas: la publicidad y el branding de la organización se muestran como texto (logo queda para el backlog).
+- **Fuera de alcance por ahora**: planos/pines, comentarios, descarga masiva y filtros (ampliación posterior; la decisión MVP #4 sigue vigente).
 
 ## 6. Seguridad y límites
 
@@ -98,7 +118,7 @@ En el detalle del proyecto (solo ADMIN/SUPERVISOR), acción **“Compartir avanc
 2. Crear el enlace → mostrar la URL y ofrecer compartirla con la hoja nativa del sistema (`Share`).
 3. Lista de enlaces del proyecto con estado (activo/vencido/revocado), fecha de expiración y acción **Revocar** (con confirmación).
 
-## 8. Criterios de aceptación (DoD F4.1)
+## 8. Criterios de aceptación (DoD F4.1 + F4.2)
 
 - [x] Migración `add_shares` aplicada; `pnpm db:migrate` reproducible desde cero.
 - [x] `POST /shares` crea el enlace; `GET /shares?projectId` lista; `DELETE /shares/:id` revoca (idempotente).
@@ -107,5 +127,7 @@ En el detalle del proyecto (solo ADMIN/SUPERVISOR), acción **“Compartir avanc
 - [x] TECHNICIAN recibe 403 al intentar crear/listar/revocar.
 - [x] La app muestra la acción solo a ADMIN/SUPERVISOR y permite compartir/revocar el enlace. _(pendiente de validación en dispositivo)_
 - [x] `pnpm lint` en 0, `pnpm typecheck` y `pnpm build` OK; ROADMAP y SPEC actualizados.
+- [x] Un navegador que abre el enlace ve la **vista web** (grilla + página de foto), no JSON.
+- [x] Enlace vencido/revocado muestra una página explicativa (no un error técnico).
 
-**Verificación automatizada:** `pnpm smoke:shares` ejecuta el flujo completo contra la API local (crear, listar, leer sin auth, revocar, expirar, roles y aislamiento cross-org) con 29 comprobaciones y borra los datos de prueba al terminar.
+**Verificación automatizada:** `pnpm smoke:shares` ejecuta el flujo completo contra la API local (crear, listar, leer sin auth, HTML de la vista web, página de foto, revocar, expirar, roles y aislamiento cross-org) con 39 comprobaciones y borra los datos de prueba al terminar.
