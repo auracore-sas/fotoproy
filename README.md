@@ -10,14 +10,14 @@ FotoProy es una plataforma móvil (iOS + Android) para **capturar, almacenar, or
 
 ## Estado del proyecto
 
-| Estado            | Detalle                                                                                                                                   |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| 📋 Especificación | ✅ **v2.1** — decisiones de producto y stack cerradas ([docs/SPEC.md](docs/SPEC.md))                                                      |
-| 🗺️ Planificación  | ✅ **ROADMAP creado** — 5 fases (F0–F4) hasta el MVP ([ROADMAP.md](ROADMAP.md))                                                           |
-| 💻 Código         | ✅ **F1 (M1)** · ✅ **F2 (M2)** · ✅ **F3 (M3)**: planos, anclaje de pines offline-first, filtros y comentarios — validado en dispositivo |
+| Estado            | Detalle                                                                                                                                                                                                  |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 📋 Especificación | ✅ **v2.1** — decisiones de producto y stack cerradas ([docs/SPEC.md](docs/SPEC.md))                                                                                                                     |
+| 🗺️ Planificación  | ✅ **ROADMAP creado** — 5 fases (F0–F4) hasta el MVP ([ROADMAP.md](ROADMAP.md))                                                                                                                          |
+| 💻 Código         | ✅ **F1 (M1)** · ✅ **F2 (M2)** · ✅ **F3 (M3)** · 🚧 **F4 en curso** — F4.1 enlaces de solo lectura ✅ y F4.2 vista web ✅ (pendiente validar el enlace en el navegador del teléfono); siguen F4.3–F4.7 |
 
 > [!NOTE]
-> Proyecto en desarrollo — Fases 0–3 completas (M0–M3). Queda Fase 4 (compartir, QA, distribución) y el despliegue F2.4. El estado por fases vive en el [ROADMAP](ROADMAP.md).
+> Proyecto en desarrollo — Fases 0–3 completas (M0–M3) y Fase 4 en curso (F4.1 + F4.2 listos; pendiente la validación del enlace en el teléfono). Queda F4.3–F4.7, el despliegue F2.4 y el visor PDF opcional. El estado por fases vive en el [ROADMAP](ROADMAP.md).
 
 ---
 
@@ -82,6 +82,7 @@ fotoproy/
 | [docs/SPEC.md](docs/SPEC.md)               | Especificación técnica y de producto **v2.1**: visión, alcance del MVP, stack, arquitectura, modelo de datos y decisiones cerradas. |
 | [docs/development.md](docs/development.md) | Guía de desarrollo: cómo levantar el backend, la app en el celular con Expo Go, demo M2 offline y solución de problemas.            |
 | [docs/metadata.md](docs/metadata.md)       | Referencia del producto: metadatos registrados por foto/video (captura, sync, estampa visual, servidor).                            |
+| [docs/shares.md](docs/shares.md)           | Enlaces de solo lectura (F4.1): decisiones, modelo de datos, endpoints privados/públicos, seguridad y criterios de aceptación.      |
 | [ROADMAP.md](ROADMAP.md)                   | Plan de implementación: fases F0–F4 con tareas, criterios de terminado, hitos, riesgos y backlog post-MVP.                          |
 | [AGENTS.md](AGENTS.md)                     | Reglas y flujos de trabajo para agentes de código: idiomas, convenciones, comandos y trampas.                                       |
 | [docs/archive/](docs/archive/)             | Historial de versiones (SPEC v1.0 original, foco eléctrico LATAM).                                                                  |

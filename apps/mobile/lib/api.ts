@@ -11,6 +11,7 @@ import type {
   CreatePinPayload,
   CreatePlanPayload,
   CreateProjectPayload,
+  CreateSharePayload,
   Page,
   Photo,
   Pin,
@@ -19,6 +20,7 @@ import type {
   PresignPlanUploadPayload,
   PresignUploadResponse,
   Project,
+  ShareLink,
   UserInfo,
 } from './types';
 
@@ -170,5 +172,18 @@ export const api = {
 
   listPhotoComments(token: string, photoId: string): Promise<Comment[]> {
     return request(`/photos/${photoId}/comments`, { token });
+  },
+
+  /** F4.1 — creates a read-only link; the token is returned only once. */
+  createShare(token: string, payload: CreateSharePayload): Promise<ShareLink> {
+    return request('/shares', { method: 'POST', token, body: payload });
+  },
+
+  listShares(token: string, projectId: string): Promise<ShareLink[]> {
+    return request(`/shares?projectId=${projectId}`, { token });
+  },
+
+  revokeShare(token: string, id: string): Promise<ShareLink> {
+    return request(`/shares/${id}`, { method: 'DELETE', token });
   },
 };

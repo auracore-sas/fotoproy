@@ -355,8 +355,18 @@ export const photoPinSchema = z.object({
 export type PhotoPin = z.infer<typeof photoPinSchema>;
 
 /* ------------------------------------------------------------------ */
-/* Sharing (read-only links)                                           */
+/* Sharing (read-only links, F4.1)                                     */
 /* ------------------------------------------------------------------ */
+
+export const SHARE_STATUSES = ['ACTIVE', 'EXPIRED', 'REVOKED'] as const;
+export type ShareStatus = (typeof SHARE_STATUSES)[number];
+
+/** Validity presets offered by the app (days). */
+export const SHARE_VALIDITY_DAYS = [7, 30, 90, 365] as const;
+
+/** Stable codes the public page uses to explain a dead link (F4.2). */
+export const SHARE_ERROR_CODES = ['SHARE_NOT_FOUND', 'SHARE_EXPIRED', 'SHARE_REVOKED'] as const;
+export type ShareErrorCode = (typeof SHARE_ERROR_CODES)[number];
 
 export const createShareInputSchema = z.object({
   projectId: uuidSchema,
@@ -364,6 +374,60 @@ export const createShareInputSchema = z.object({
   expiresInDays: z.number().int().min(1).max(365).default(30),
 });
 export type CreateShareInput = z.infer<typeof createShareInputSchema>;
+
+export const shareListQuerySchema = z.object({
+  projectId: uuidSchema,
+});
+export type ShareListQuery = z.infer<typeof shareListQuerySchema>;
+
+/** Share link as seen by the owner (never exposes the token again). */
+export const shareSchema = z.object({
+  id: uuidSchema,
+  projectId: uuidSchema,
+  status: z.enum(SHARE_STATUSES),
+  expiresAt: z.string().datetime({ offset: true }),
+  revokedAt: z.string().datetime({ offset: true }).nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+  createdById: z.string().uuid().nullable(),
+  lastAccessAt: z.string().datetime({ offset: true }).nullable(),
+  accessCount: z.number().int(),
+  /** Full public link — only present in the creation response. */
+  url: z.string().url().optional(),
+});
+export type Share = z.infer<typeof shareSchema>;
+
+/* Public read-only payload served at `GET /s/:token` (no auth). */
+
+export const sharedProjectSchema = z.object({
+  name: z.string(),
+  description: z.string().nullable(),
+  clientName: z.string().nullable(),
+  organizationName: z.string(),
+});
+export type SharedProject = z.infer<typeof sharedProjectSchema>;
+
+export const sharedPhotoSchema = z.object({
+  id: uuidSchema,
+  kind: z.enum(MEDIA_KINDS),
+  durationMs: z.number().int().nullable(),
+  /** Short-lived signed URLs, regenerated on every request. */
+  url: z.string().url(),
+  thumbnailUrl: z.string().url().nullable(),
+  authorName: z.string().nullable(),
+  notes: z.string().nullable(),
+  latitude: latitudeSchema,
+  longitude: longitudeSchema,
+  altitude: z.number().nullable(),
+  capturedAt: z.string().datetime(),
+});
+export type SharedPhoto = z.infer<typeof sharedPhotoSchema>;
+
+export const sharedProjectPayloadSchema = z.object({
+  project: sharedProjectSchema,
+  expiresAt: z.string().datetime({ offset: true }),
+  photos: z.array(sharedPhotoSchema),
+});
+export type SharedProjectPayload = z.infer<typeof sharedProjectPayloadSchema>;
 
 /* ------------------------------------------------------------------ */
 /* Generic page                                                        */
