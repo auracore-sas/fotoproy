@@ -180,3 +180,27 @@ export interface Comment {
   body: string;
   createdAt: string;
 }
+
+/* F4.1 — read-only share links */
+
+export type ShareStatus = 'ACTIVE' | 'EXPIRED' | 'REVOKED';
+
+export interface ShareLink {
+  id: string;
+  projectId: string;
+  status: ShareStatus;
+  expiresAt: string;
+  revokedAt: string | null;
+  createdAt: string;
+  createdById: string | null;
+  lastAccessAt: string | null;
+  accessCount: number;
+  /** Full public link — only returned when the link is created. */
+  url?: string;
+}
+
+export interface CreateSharePayload {
+  projectId: string;
+  /** Validity in days (1–365). */
+  expiresInDays: number;
+}

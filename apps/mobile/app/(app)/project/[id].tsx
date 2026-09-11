@@ -12,7 +12,7 @@ import type { Project } from '../../../lib/types';
 export default function ProjectDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -160,6 +160,24 @@ export default function ProjectDetailScreen() {
               </Text>
             </View>
           </Pressable>
+
+          {user?.role === 'ADMIN' || user?.role === 'SUPERVISOR' ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() =>
+                router.push({ pathname: '/share/[projectId]', params: { projectId: id } })
+              }
+              style={({ pressed }) => [styles.galleryButton, pressed && { opacity: 0.85 }]}
+            >
+              <Text style={styles.galleryButtonIcon}>🔗</Text>
+              <View style={styles.captureButtonText}>
+                <Text style={styles.galleryButtonTitle}>Compartir avance</Text>
+                <Text style={styles.galleryButtonSubtitle}>
+                  Crea un enlace de solo lectura para el cliente (expira solo)
+                </Text>
+              </View>
+            </Pressable>
+          ) : null}
 
           <Pressable
             accessibilityRole="button"
