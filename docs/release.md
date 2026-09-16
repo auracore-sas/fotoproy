@@ -165,11 +165,27 @@ Verificaciones que hace el script al terminar: `aapt2 dump badging` (paquete,
 `EXPO_PUBLIC_API_URL` quedó dentro del bundle** — si el APK apunta a la IP de la
 LAN, termina con error en vez de entregar un APK inservible.
 
+### La trampa del bundle (ya resuelta en el script)
+
+El bundle JS lo genera una tarea de Gradle cuyo _up-to-date check_ **no mira las
+variables `EXPO_PUBLIC_*`**: si ya existía un bundle de un build anterior, se
+reutiliza con la URL vieja. Pasó de verdad — el primer APK quedó apuntando a la
+IP de la LAN — y solo se detectó porque el script ahora **busca la URL dentro del
+APK** al terminar.
+
+Por eso `scripts/build-apk.sh` borra el bundle generado antes de compilar y, al
+final, verifica que `EXPO_PUBLIC_API_URL` esté dentro del APK (si no, termina con
+error en lugar de entregar un APK inservible). Además `apps/mobile/lib/api.ts`
+usa un valor por defecto distinto según el entorno: la LAN en desarrollo, el
+dominio público en release.
+
 Limitaciones del APK local:
 
 - Va firmado con el **keystore de debug** del proyecto: sirve para sideload, no
   para publicar en Play (para eso, EAS con un keystore propio).
 - Para iOS hace falta un Mac o EAS Build.
+- El `versionCode` es el de `app.json`: **súbelo a mano** en cada entrega nueva
+  (EAS lo incrementa solo con `autoIncrement`, el build local no).
 
 ---
 

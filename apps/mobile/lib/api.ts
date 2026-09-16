@@ -24,7 +24,18 @@ import type {
   UserInfo,
 } from './types';
 
-export const API_URL: string = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.86.35:4100';
+/**
+ * API base URL, baked into the bundle at build time from `EXPO_PUBLIC_API_URL`.
+ *
+ * The fallback is environment-aware on purpose: a development build without the
+ * variable should reach the local API, while a release build must never end up
+ * pointing at a developer's LAN address (clients would get a dead app).
+ */
+const DEV_FALLBACK_URL = 'http://192.168.86.35:4100';
+const PROD_FALLBACK_URL = 'https://fotoproy.apx5.com';
+
+export const API_URL: string =
+  process.env.EXPO_PUBLIC_API_URL ?? (__DEV__ ? DEV_FALLBACK_URL : PROD_FALLBACK_URL);
 
 export class ApiError extends Error {
   readonly status: number;

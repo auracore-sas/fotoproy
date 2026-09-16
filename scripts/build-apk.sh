@@ -111,6 +111,14 @@ if [ "$SANDBOX" = "1" ] && systemd-run --user --scope true >/dev/null 2>&1; then
   LAUNCHER=(systemd-run --user --scope -p "MemoryMax=$MEMORY_MAX" -p "MemorySwapMax=$MEMORY_SWAP_MAX" --)
   echo "  caps:        memory $MEMORY_MAX (swap $MEMORY_SWAP_MAX) · CPUs ${CPUS:-all} · nice 10"
 fi
+
+# The JS bundle is produced by a Gradle task whose up-to-date check does NOT
+# consider EXPO_PUBLIC_* environment variables, so a cached bundle from an
+# earlier build keeps the old API URL (this shipped a LAN address once). Drop the
+# generated bundle so it is always regenerated with $API_URL baked in.
+rm -rf "$ANDROID_DIR/app/build/generated/assets/react" \
+  "$ANDROID_DIR/app/build/intermediates/assets/release/mergeReleaseAssets" 2>/dev/null || true
+echo "  js bundle:   regenerated with $API_URL"
 PIN=()
 if [ -n "$CPUS" ] && command -v taskset >/dev/null 2>&1; then
   PIN=(taskset -c "$CPUS")
