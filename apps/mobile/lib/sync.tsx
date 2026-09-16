@@ -226,6 +226,10 @@ export class SyncEngine {
         return this.syncPin(item, token);
       }
 
+      if (item.entityType === 'pin_remove') {
+        return this.syncPinRemove(item, token);
+      }
+
       if (item.entityType === 'comment') {
         return this.syncComment(item, token);
       }
@@ -400,6 +404,28 @@ export class SyncEngine {
       // 409 = already registered on a previous attempt → treat as synced.
     }
     await markPinSynced(pin.id, new Date().toISOString());
+    await completeSyncItem(item.id);
+    this.update({ syncing: false, lastError: null, lastSyncedAt: new Date().toISOString() });
+    await this.refreshState();
+    return 'ok';
+  }
+
+  /**
+   * Detaches a pin on the server (soft-remove). A 404 means the pin never
+   * reached the server (created and removed while offline) or was already
+   * detached on another device — both are success for an idempotent remove.
+   */
+  private async syncPinRemove(item: SyncQueueItem, token: string): Promise<ProcessOutcome> {
+    this.update({ syncing: true });
+    await this.markItemUploading(item, item.entityId);
+    try {
+      await api.removePin(token, item.entityId);
+    } catch (error) {
+      if (!(error instanceof ApiError) || (error.status !== 404 && error.status !== 409)) {
+        return this.classifyApiError(item, error);
+      }
+      // Already gone: nothing else to do.
+    }
     await completeSyncItem(item.id);
     this.update({ syncing: false, lastError: null, lastSyncedAt: new Date().toISOString() });
     await this.refreshState();

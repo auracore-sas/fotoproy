@@ -32,6 +32,8 @@ import { SyncBar } from '../../../components/sync-indicator';
 import { api } from '../../../lib/api';
 import { errorMessage, useAuth } from '../../../lib/auth';
 import { generateId } from '../../../lib/id';
+import { cachePlans } from '../../../lib/plan-cache';
+import { listCachedPlans } from '../../../lib/db';
 import type { Plan, UserRole } from '../../../lib/types';
 
 function canUpload(role: UserRole | undefined): boolean {
@@ -58,6 +60,8 @@ export default function PlansScreen() {
   const [title, setTitle] = useState('');
   const [uploadProgress, setUploadProgress] = useState<number | null>(null); // 0..1
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // True when the server is unreachable and the list comes from the local cache.
+  const [offline, setOffline] = useState(false);
   // Only the first load blocks; focus reloads keep the current list visible.
   const loadedOnceRef = useRef(false);
 
@@ -75,8 +79,28 @@ export default function PlansScreen() {
       try {
         const page = await api.listPlans(token, projectId);
         setPlans(page.items);
+        setOffline(false);
+        // Mirror metadata so the list (and the viewer) work offline.
+        void cachePlans(page.items);
       } catch (err) {
-        setError(errorMessage(err));
+        const cached = await listCachedPlans(projectId).catch(() => []);
+        if (cached.length > 0) {
+          setPlans(
+            cached.map((row) => ({
+              id: row.id,
+              projectId: row.projectId,
+              title: row.title,
+              planKind: row.planKind,
+              pageCount: row.pageCount,
+              fileUrl: row.remoteUrl ?? '',
+              thumbnailUrl: row.thumbnailUrl,
+              createdAt: row.createdAt,
+            })),
+          );
+          setOffline(true);
+        } else {
+          setError(errorMessage(err));
+        }
       } finally {
         loadedOnceRef.current = true;
         setLoading(false);
@@ -244,6 +268,13 @@ export default function PlansScreen() {
       />
       <View style={styles.bannerArea}>
         <SyncBar />
+        {offline ? (
+          <Banner
+            tone="info"
+            icon="✈️"
+            message="Sin conexión · mostrando los planos guardados en este equipo (puedes verlos y anclar fotos)."
+          />
+        ) : null}
         {error && plans.length > 0 ? (
           <Banner
             tone="error"

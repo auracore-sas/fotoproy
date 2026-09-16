@@ -176,6 +176,9 @@ model PhotoPin {
   xPercentage Decimal     @db.Decimal(5, 2) // 0.00 – 100.00
   yPercentage Decimal     @db.Decimal(5, 2)
   createdAt   DateTime    @default(now())
+  /// Soft-remove: the evidence photo is never deleted, the pin is just
+  /// detached from the plan (keeps the append-only model and offline queues).
+  removedAt   DateTime?
 
   @@index([planId])
   @@index([photoId])

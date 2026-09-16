@@ -132,4 +132,15 @@ export const MIGRATIONS: LocalMigration[] = [
       `ALTER TABLE cached_projects ADD COLUMN created_at TEXT;`,
     ],
   },
+  {
+    // v6 — detachable pins (soft-remove) + offline plans. Pins are never
+    // deleted: `removed_at` marks the anchor as detached, which keeps the
+    // append-only model and offline queues working. `project_plans` starts
+    // being used to cache the plan image on disk (it had `local_uri` since v1).
+    version: 6,
+    statements: [
+      `ALTER TABLE photo_pins ADD COLUMN removed_at TEXT;`,
+      `CREATE INDEX IF NOT EXISTS idx_photo_pins_plan ON photo_pins(plan_id);`,
+    ],
+  },
 ];

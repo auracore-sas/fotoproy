@@ -163,6 +163,8 @@ export interface Pin {
   xPercentage: number;
   yPercentage: number;
   createdAt: string;
+  /** Soft-remove timestamp (pin detached from the plan; photo kept). */
+  removedAt?: string | null;
   photo?: PinPhotoSummary;
 }
 

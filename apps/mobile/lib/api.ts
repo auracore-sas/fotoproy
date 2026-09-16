@@ -165,6 +165,11 @@ export const api = {
     return request(`/plans/${planId}/pins`, { token });
   },
 
+  /** Detaches a pin from the plan (soft-remove, idempotent). */
+  removePin(token: string, pinId: string): Promise<Pin> {
+    return request(`/pins/${pinId}`, { method: 'DELETE', token });
+  },
+
   /** Adds a comment to a photo (append-only, idempotent by id). */
   createComment(token: string, payload: CreateCommentPayload): Promise<Comment> {
     return request('/comments', { method: 'POST', token, body: payload });

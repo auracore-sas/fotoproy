@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
 import type { CreatePinInput, PhotoPin } from '@fotoproy/shared';
 import { createPinInputSchema, uuidSchema } from '@fotoproy/shared';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
@@ -26,5 +26,17 @@ export class PinsController {
     @Param('id', new ZodValidationPipe(uuidSchema)) id: string,
   ): Promise<PhotoPin[]> {
     return this.pinsService.listByPlan(current, id);
+  }
+
+  /**
+   * Detaches a photo from the plan (soft-remove, idempotent). The evidence
+   * photo stays in the gallery; only the anchor disappears.
+   */
+  @Delete('pins/:id')
+  remove(
+    @CurrentUser() current: AuthedUser,
+    @Param('id', new ZodValidationPipe(uuidSchema)) id: string,
+  ): Promise<PhotoPin> {
+    return this.pinsService.remove(current, id);
   }
 }
