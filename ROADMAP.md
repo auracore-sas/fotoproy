@@ -123,7 +123,7 @@
 
 **DoD global F4 = M4.**
 
-> **Estado al 2026-09-16:** F4.1 y F4.2 ✅ **validados en dispositivo** (el enlace abre en el navegador del teléfono y muestra las fotos con su estampa) · **F4.3 ✅** pulido UX/offline · **F4.3.1 ✅** rediseño visual · fix de CSP que impedía cargar los medios en HTTP (v1.31).
+> **Estado al 2026-09-16** (tag local `v0.3.0-f4-enlaces`, sin remoto por decisión del equipo): F4.1 y F4.2 ✅ **validados en dispositivo** (el enlace abre en el navegador del teléfono y muestra las fotos con su estampa) · **F4.3 ✅** pulido UX/offline · **F4.3.1 ✅** rediseño visual · fix de CSP que impedía cargar los medios en HTTP (v1.31).
 > **Pendiente crítico de negocio**: **F2.4 despliegue** (credenciales Cloudflare R2 + dominio propio) — hasta tenerlas, los enlaces de solo lectura funcionan **solo dentro de la LAN** de la oficina, así que un cliente externo no puede abrirlos. Es el mayor bloqueo de valor del producto y depende de terceros.
 > **Hecho desde entonces (2026-09-16):** F4.3.1 rediseño visual · F4.3.2 anclaje explícito en planos, pines desanclables y **planos offline** · F4.3.3 planos y anclajes en la vista web del enlace · fix de CSP de las páginas públicas (v1.31) y fix del área táctil de los marcadores (v1.34).
 > **Siguiente bloque de trabajo**: **F4.4 QA** (matriz iOS/Android, E2E mínimo, org-scoping) y **F4.5 seguridad** (rate limiting en endpoints públicos, límites de subida, EXIF); **F4.6–F4.7** después. **F1.8** (overlay GPS grabado en la imagen) sigue como decisión de producto pendiente.
@@ -193,6 +193,8 @@ Orden sugerido (P0 = primero cuando se valide en campo):
 ---
 
 ## Registro de cambios
+
+- **v1.36 (2026-09-16):** cierre de jornada — se etiqueta el estado actual con el tag **anotado `v0.3.0-f4-enlaces`** (local, _sin repositorio remoto_ por decisión del equipo): abarca los **31 commits** posteriores a `v0.2.0-m3` — F4.1 enlaces de solo lectura, F4.2 vista web (validados en dispositivo), F4.3 pulido UX/offline, F4.3.1 rediseño “blueprint industrial”, F4.3.2 anclaje explícito en planos + pines desanclables + planos offline, F4.3.3 planos y anclajes en el enlace compartido, fix de CSP de las páginas públicas (v1.31) y fix del área táctil de los marcadores (v1.34). **M4 sigue pendiente** (F4.4 QA, F4.5 seguridad, F4.6 distribución, F4.7 observabilidad) y **F2.4 despliegue** continúa bloqueado por credenciales R2 + dominio: hasta entonces los enlaces funcionan solo dentro de la LAN. Documentación al día: este ROADMAP, `AGENTS.md`, `README.md`, `docs/shares.md` y las notas de memoria de la sesión.
 
 - **v1.35 (2026-09-16):** **F4.3.3 — planos y anclajes en el enlace compartido** (rama `feat/share-plan-map`): la vista web muestra ahora los planos de la obra (sección con tarjetas y nº de fotos ancladas) y una **página de plano** con la imagen completa y **marcadores numerados** por cada anclaje (posiciones en %, sin JavaScript), cada uno enlazando a su foto; la página de la foto añade “📍 Ver en el plano”. Los medios del plano se sirven por el **mismo proxy** de la API (`/s/:token/plan/:planId/media`) y los anclajes quitados (`removedAt`) quedan ocultos. El payload JSON incorpora `plans[]` con `pins[]`. Verificación: Chromium real (galería + plano con 3 marcadores + navegación marcador→foto) y `pnpm smoke:pins` ampliado a **39/39**; `smoke:shares` 44/44 · `lint` 0 · `typecheck` 4/4 · `build` OK.
 
