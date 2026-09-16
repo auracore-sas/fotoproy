@@ -107,7 +107,50 @@ Antes de publicar un binario: `pnpm typecheck && pnpm lint && pnpm --filter
 
 ---
 
-## 6. Qué falta y depende de terceros
+## 6. APK local sin cuenta Expo (lo que se usó aquí)
+
+Como alternativa a EAS Build, el APK se puede compilar en esta máquina. El
+script `scripts/build-apk.sh` deja el toolchain preparado y usa ajustes
+conservadores de memoria:
+
+```bash
+bash scripts/build-apk.sh                              # arm64 (recomendado)
+ABIS="arm64-v8a,armeabi-v7a" bash scripts/build-apk.sh  # + equipos de 32 bits
+PREPARE_ONLY=1 bash scripts/build-apk.sh               # solo verificar el toolchain
+```
+
+Salida: `~/fotoproy-builds/fotoproy-<versión>-<versionCode>.apk` y su log en la
+misma carpeta (fuera de `/tmp`, para que un reinicio no lo borre).
+
+Qué necesita (ya instalado en esta máquina, todo en carpetas de usuario, sin `sudo`):
+
+| Pieza       | Ruta                              | Nota                                                           |
+| ----------- | --------------------------------- | -------------------------------------------------------------- |
+| JDK 17      | `~/tools/jdk17`                   | RN 0.86 **exige 17**; el JDK del sistema es 21/25 y falla.     |
+| Android SDK | `~/Android/Sdk`                   | cmdline-tools + `platforms;android-36` + `build-tools;36.0.0`. |
+| NDK         | `~/Android/Sdk/ndk/27.1.12297006` | Compilación C++ de la arquitectura nueva.                      |
+| CMake       | `~/Android/Sdk/cmake/3.22.1`      | —                                                              |
+| Cachés      | `~/.gradle` (≈3,6 GB)             | Ya descargadas: los siguientes builds son mucho más rápidos.   |
+
+> ⚠️ **Memoria**: el primer intento compilando **4 ABIs en paralelo** con un heap
+> de Gradle de 3 GB dejó el equipo sin respuesta (≈5 GB libres, swap de 2 GB). El
+> script limita a **una ABI**, **2 workers**, heap de **2 GB** y aborta si hay
+> menos de 4 GB disponibles. Cierra Chrome/IDE antes de compilar.
+
+Verificaciones que hace el script al terminar: `aapt2 dump badging` (paquete,
+`versionCode`, SDKs), `apksigner` (firma) y **comprobación de que
+`EXPO_PUBLIC_API_URL` quedó dentro del bundle** — si el APK apunta a la IP de la
+LAN, termina con error en vez de entregar un APK inservible.
+
+Limitaciones del APK local:
+
+- Va firmado con el **keystore de debug** del proyecto: sirve para sideload, no
+  para publicar en Play (para eso, EAS con un keystore propio).
+- Para iOS hace falta un Mac o EAS Build.
+
+---
+
+## 7. Qué falta y depende de terceros
 
 - [ ] `eas login` + `eas init` + `update:configure` (escribe `projectId` y
       `updates.url` en `app.json`).
@@ -119,7 +162,7 @@ Antes de publicar un binario: `pnpm typecheck && pnpm lint && pnpm --filter
 - [ ] Probar el **upgrade del esquema local** (instalar la versión previa y
       actualizar conservando fotos pendientes de sincronizar).
 
-## 7. Limitaciones conocidas
+## 8. Limitaciones conocidas
 
 - **Visor PDF** (F3.0): requiere código nativo ⇒ dev client, no Expo Go.
   Pendiente en el backlog.
