@@ -88,24 +88,26 @@ Reglas:
 
 Servida por la propia API, **sin SPA ni build**: HTML + CSS en línea generado en el servidor.
 
-| Ruta                                   | Contenido                                                                                                                                                                            |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /s/:token`                        | Cabecera (organización, proyecto, nº de fotos, vencimiento), descripción y **grilla de thumbnails** (con la estampa de evidencia ya quemada en la imagen); tile → página de la foto. |
-| `GET /s/:token/p/:photoId`             | **Página individual**: imagen a tamaño completo (o reproductor si el medio es video) + fecha, autor, GPS y nota; enlace para volver a la grilla.                                     |
-| `GET /s/:token/media/:photoId`         | **Medio servido por la API** (`?size=thumb` por defecto, `?size=full` para original/video). El HTML nunca apunta al bucket.                                                          |
-| Token vencido / revocado / desconocido | Página de error clara (“Enlace vencido”, “Enlace revocado”, “Enlace no encontrado”) con el mismo código estable del JSON.                                                            |
+| Ruta                                   | Contenido                                                                                                                                                                                                                                                                              |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /s/:token`                        | Cabecera (organización, proyecto, nº de fotos/planos, vencimiento), descripción, **sección “Planos de la obra”** (tarjeta por plano con miniatura y nº de fotos ancladas) y **grilla de thumbnails** (con la estampa de evidencia ya quemada en la imagen); tile → página de la foto.  |
+| `GET /s/:token/plan/:planId`           | **Página del plano**: imagen completa con **un marcador numerado por foto anclada** (posiciones en %) y enlace a la foto de cada punto. Los anclajes desanclados (`removedAt`) no se muestran. Si el plano es **PDF**, se muestra una nota con enlace al archivo (sin visor embebido). |
+| `GET /s/:token/plan/:planId/media`     | **Imagen del plano servida por la API** (`?size=thumb` por defecto, `?size=full`), igual que las fotos: el HTML nunca apunta al bucket.                                                                                                                                                |
+| `GET /s/:token/p/:photoId`             | **Página individual**: imagen a tamaño completo (o reproductor si el medio es video) + fecha, autor, GPS y nota; enlaces para volver a la grilla y, si la foto está anclada, **“📍 Ver en el plano”**.                                                                                 |
+| `GET /s/:token/media/:photoId`         | **Medio servido por la API** (`?size=thumb` por defecto, `?size=full` para original/video). El HTML nunca apunta al bucket.                                                                                                                                                            |
+| Token vencido / revocado / desconocido | Página de error clara (“Enlace vencido”, “Enlace revocado”, “Enlace no encontrado”) con el mismo código estable del JSON.                                                                                                                                                              |
 
 Detalles de implementación y seguridad:
 
 - **Los medios se sirven a través de la API**, no con URLs firmadas del bucket: así el host de storage nunca se expone en la vista pública y el navegador no puede “ascender” la petición a HTTPS (Chrome sube `http://…:9000` a `https://…:9000`; MinIO local es HTTP puro y las miniaturas quedaban en gris). Los objetos se **streamean** sin cargarlos en memoria (`Cache-Control: private, max-age=300`).
 - **Las páginas públicas no envían `upgrade-insecure-requests`** (fix 2026-09-16). Helmet lo añade por defecto y, en despliegues HTTP (dev/LAN/staging), el navegador reescribe **también los medios same-origin** a `https://…:4100/…`, con lo que **ninguna imagen carga** aunque el proxy responda 200. Las páginas fijan su propio CSP (`default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`) y el directivo se eliminó del CSP global (no aporta nada a una API JSON). En producción con HTTPS el problema no se manifestaba, pero cualquier entorno HTTP sí lo sufría.
-- El JSON de `GET /s/:token` (clientes de API) sigue entregando URLs firmadas de vida corta; la vista web usa el proxy.
+- El JSON de `GET /s/:token` (clientes de API) sigue entregando URLs firmadas de vida corta; la vista web usa el proxy. Incluye `plans[]` con sus `pins[]` (id, foto, página y posición en %), siempre **sin anclajes desanclados**.
 - Todos los datos de usuario (nombres, descripciones, notas) se **escapan** antes de interpolarse en el HTML.
 - Los enlaces internos son **absolutos** (se construyen con `PUBLIC_BASE_URL` o el host del request), así la página funciona igual servida desde cualquier proxy.
 - Sin JavaScript: funciona en cualquier navegador móvil; `loading="lazy"` en las miniaturas y `preload="none"` en videos.
 - `Cache-Control: no-store` en el HTML; los medios van por el proxy con caché privada corta.
 - Marcas: la publicidad y el branding de la organización se muestran como texto (logo queda para el backlog).
-- **Fuera de alcance por ahora**: planos/pines, comentarios, descarga masiva y filtros (ampliación posterior; la decisión MVP #4 sigue vigente).
+- **Fuera de alcance por ahora**: comentarios, descarga masiva y filtros (ampliación posterior; la decisión MVP #4 sigue vigente).
 
 ## 7. Seguridad y límites
 
