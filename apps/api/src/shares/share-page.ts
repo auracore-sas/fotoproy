@@ -1,4 +1,4 @@
-import type { SharedPhoto, SharedProjectPayload } from '@fotoproy/shared';
+import type { SharedPhoto, SharedPlan, SharedProjectPayload } from '@fotoproy/shared';
 import type { ShareErrorCode } from '@fotoproy/shared';
 
 /**
@@ -28,6 +28,18 @@ const STYLES = `
   .tile .caption { padding: 8px 10px; font-size: 12px; color: #475569; }
   .empty { background: #fff; border: 1px dashed #CBD5E1; border-radius: 12px; padding: 28px 16px; text-align: center; color: #475569; }
   .back { display: inline-block; margin-bottom: 14px; font-size: 14px; color: #1D4ED8; text-decoration: none; }
+  .section-title { font-size: 15px; font-weight: 700; margin: 0 0 10px; color: #0F172A; }
+  .plans { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-bottom: 24px; }
+  .plan-card { display: block; background: #fff; border: 1px solid #E2E8F0; border-radius: 12px; overflow: hidden; text-decoration: none; color: inherit; }
+  .plan-card img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #E2E8F0; }
+  .plan-card .caption { display: block; padding: 8px 10px; font-size: 12px; color: #475569; }
+  .badge { display: inline-block; margin-left: 6px; background: #EFF6FF; color: #1D4ED8; border-radius: 999px; padding: 1px 7px; font-weight: 700; }
+  .plan-map { position: relative; display: block; background: #fff; border: 1px solid #E2E8F0; border-radius: 12px; overflow: hidden; }
+  .plan-map img { display: block; width: 100%; height: auto; }
+  .pin { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; background: #DC2626; border: 2.5px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); color: #fff; font-size: 12px; font-weight: 700; text-align: center; line-height: 21px; text-decoration: none; }
+  .pin::after { content: ''; position: absolute; inset: -10px; border-radius: 50%; }
+  .hint { font-size: 13px; color: #475569; margin: 0 0 12px; }
+  .pdf-note { background: #fff; border: 1px dashed #CBD5E1; border-radius: 12px; padding: 24px 16px; text-align: center; color: #475569; font-size: 14px; line-height: 1.5; }
   .photo { background: #fff; border: 1px solid #E2E8F0; border-radius: 12px; overflow: hidden; }
   .photo img, .photo video { display: block; width: 100%; max-height: 78vh; object-fit: contain; background: #0F172A; }
   dl { margin: 0; padding: 14px; display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; font-size: 14px; }
@@ -78,13 +90,13 @@ ${body}
 </html>`;
 }
 
-/** Project gallery: thumbnails (with the burned evidence stamp) + captions. */
+/** Project gallery: plan maps + thumbnails (with the burned evidence stamp). */
 export function renderProjectPage(
   payload: SharedProjectPayload,
   token: string,
   baseUrl: string,
 ): string {
-  const { project, photos, expiresAt } = payload;
+  const { project, photos, plans, expiresAt } = payload;
   const tiles = photos
     .map((photo) => {
       // Media is proxied by the API (see `streamPublicMedia`): the bucket host
@@ -107,15 +119,36 @@ export function renderProjectPage(
     })
     .join('\n');
 
+  // Plans (maps/blueprints) get their own section: the client can open a plan
+  // and see where each photo was taken.
+  const planCards = plans
+    .map((plan) => {
+      const mediaUrl = `${baseUrl}/s/${token}/plan/${plan.id}/media`;
+      return `<a class="plan-card" href="${escapeAttr(`${baseUrl}/s/${token}/plan/${plan.id}`)}">
+  <img src="${escapeAttr(`${mediaUrl}?size=thumb`)}" alt="${escapeAttr(plan.title)}" loading="lazy" />
+  <span class="caption">${escapeHtml(plan.title)}<span class="badge">${plan.pins.length} 📍</span></span>
+</a>`;
+    })
+    .join('\n');
+
   const body = `<header>
   <div class="org">${escapeHtml(project.organizationName)}</div>
   <h1>${escapeHtml(project.name)}</h1>
   <div class="meta">Avance de obra · ${photos.length} ${
     photos.length === 1 ? 'foto' : 'fotos'
-  } · enlace válido hasta el ${escapeHtml(formatDateTime(expiresAt))}</div>
+  }${plans.length > 0 ? ` · ${plans.length} ${plans.length === 1 ? 'plano' : 'planos'}` : ''} · enlace válido hasta el ${escapeHtml(
+    formatDateTime(expiresAt),
+  )}</div>
 </header>
 <main>
   ${project.description ? `<div class="description">${escapeHtml(project.description)}</div>` : ''}
+  ${
+    plans.length > 0
+      ? `<div class="section-title">Planos de la obra</div>
+  <div class="plans">\n${planCards}\n</div>`
+      : ''
+  }
+  <div class="section-title">Fotos (${photos.length})</div>
   ${
     photos.length === 0
       ? '<div class="empty">Todavía no hay fotos publicadas en este proyecto.</div>'
@@ -149,6 +182,10 @@ export function renderPhotoPage(
       ? `${photo.latitude.toFixed(6)}, ${photo.longitude.toFixed(6)}`
       : '—';
 
+  const anchoredPlan = payload.plans.find((plan) =>
+    plan.pins.some((pin) => pin.photoId === photo.id),
+  );
+
   const body = `<header>
   <div class="org">${escapeHtml(payload.project.organizationName)}</div>
   <h1>${escapeHtml(payload.project.name)}</h1>
@@ -156,6 +193,13 @@ export function renderPhotoPage(
 </header>
 <main>
   <a class="back" href="${escapeAttr(`${baseUrl}/s/${token}`)}">← Volver a todas las fotos</a>
+  ${
+    anchoredPlan
+      ? `<a class="back" style="margin-left:14px" href="${escapeAttr(
+          `${baseUrl}/s/${token}/plan/${anchoredPlan.id}`,
+        )}">📍 Ver en el plano</a>`
+      : ''
+  }
   <div class="photo">
     ${media}
     <dl>
@@ -168,6 +212,59 @@ export function renderPhotoPage(
 </main>`;
 
   return layout(`${payload.project.name} — FotoProy`, body);
+}
+
+/**
+ * Plan page: the plan image with one marker per anchored photo. Markers are
+ * plain anchors positioned in percentages, so the map stays usable on mobile
+ * with no JavaScript at all.
+ */
+export function renderPlanPage(
+  payload: SharedProjectPayload,
+  plan: SharedPlan,
+  token: string,
+  baseUrl: string,
+): string {
+  const mediaUrl = `${baseUrl}/s/${token}/plan/${plan.id}/media?size=full`;
+  const clampPct = (value: number) => Math.min(100, Math.max(0, value)).toFixed(2);
+  const pins = plan.pins
+    .map(
+      (pin, index) =>
+        `<a class="pin" style="left:${clampPct(pin.xPercentage)}%;top:${clampPct(
+          pin.yPercentage,
+        )}%" href="${escapeAttr(
+          `${baseUrl}/s/${token}/p/${pin.photoId}`,
+        )}" title="Foto anclada">${index + 1}</a>`,
+    )
+    .join('\n');
+
+  const isPdf = plan.planKind === 'PDF';
+  const body = `<header>
+  <div class="org">${escapeHtml(payload.project.organizationName)}</div>
+  <h1>${escapeHtml(plan.title)}</h1>
+  <div class="meta">${escapeHtml(payload.project.name)} · ${plan.pins.length} ${
+    plan.pins.length === 1 ? 'foto anclada' : 'fotos ancladas'
+  }</div>
+</header>
+<main>
+  <a class="back" href="${escapeAttr(`${baseUrl}/s/${token}`)}">← Volver al proyecto</a>
+  ${
+    plan.pins.length > 0
+      ? '<p class="hint">Toca un punto del plano para ver la foto de esa ubicación.</p>'
+      : '<p class="hint">Todavía no hay fotos ancladas en este plano.</p>'
+  }
+  ${
+    isPdf
+      ? `<div class="pdf-note">Es un plano en PDF (${plan.pageCount} ${
+          plan.pageCount === 1 ? 'página' : 'páginas'
+        }). <a href="${escapeAttr(mediaUrl)}">Ábrelo aquí</a> para verlo en tu visor de PDF.</div>`
+      : `<div class="plan-map">\n<img src="${escapeAttr(mediaUrl)}" alt="${escapeAttr(
+          plan.title,
+        )}" />\n${pins}\n</div>`
+  }
+</main>`;
+
+  return layout(`${plan.title} — ${payload.project.name} — FotoProy`, body);
 }
 
 const ERROR_COPY: Record<ShareErrorCode, { title: string; message: string }> = {

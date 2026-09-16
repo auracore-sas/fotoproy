@@ -37,6 +37,10 @@ check() { # check <label> <expected> <actual>
 
 uuid() { node -e "console.log(require('crypto').randomUUID())"; }
 
+contains() { # contains <label> <needle> <file>
+  check "$1" "true" "$(grep -qF "$2" "$3" && echo true || echo false)"
+}
+
 code() { # code <method> <path> <token> [body]
   local method=$1 path=$2 token=${3:-} body=${4:-}
   if [ -n "$body" ]; then
@@ -127,6 +131,47 @@ NEW_PIN=$(uuid)
 code POST /pins "$TOKEN" \
   "{\"id\":\"$NEW_PIN\",\"planId\":\"$PLAN_ID\",\"photoId\":\"$PHOTO_ID\",\"pageNumber\":1,\"xPercentage\":15,\"yPercentage\":15}" >/dev/null
 check "cross-org detach 404" "404" "$(code DELETE "/pins/$NEW_PIN" "$TOKEN_OTHER")"
+
+# ---------------------------------------------------------------------------
+# The read-only web view must show the plan map with its anchors (and hide
+# detached ones), all proxied through the API.
+# ---------------------------------------------------------------------------
+echo "== 6. Public web view: plan map with anchors =="
+SHARE=$(curl -s -X POST "$API/shares" -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
+  -d "{\"projectId\":\"$PROJECT_ID\",\"expiresInDays\":7}")
+SHARE_TOKEN=$(echo "$SHARE" | jq -r .url | sed 's|.*/s/||')
+check "share created" "true" "$([ -n "$SHARE_TOKEN" ] && echo true || echo false)"
+
+PAYLOAD=$(curl -s "$API/s/$SHARE_TOKEN")
+check "payload exposes the plan" "1" "$(echo "$PAYLOAD" | jq -r '.plans | length')"
+check "payload exposes only active pins" "1" "$(echo "$PAYLOAD" | jq -r '.plans[0].pins | length')"
+
+check "gallery html 200" "200" "$(curl -s -o /tmp/f43-gallery.html -w '%{http_code}' \
+  -H 'Accept: text/html' "$API/s/$SHARE_TOKEN")"
+contains "gallery lists the plan" "Plano F43" /tmp/f43-gallery.html
+contains "gallery links the plan page" "/plan/$PLAN_ID" /tmp/f43-gallery.html
+
+check "plan page 200" "200" "$(curl -s -o /tmp/f43-plan.html -w '%{http_code}' \
+  -H 'Accept: text/html' "$API/s/$SHARE_TOKEN/plan/$PLAN_ID")"
+contains "plan page has the marker" 'class="pin"' /tmp/f43-plan.html
+contains "plan page has the title" "Plano F43" /tmp/f43-plan.html
+contains "marker links to its photo" "/p/$PHOTO_ID" /tmp/f43-plan.html
+
+check "plan media 200" "200" \
+  "$(curl -s -o /dev/null -w '%{http_code}' "$API/s/$SHARE_TOKEN/plan/$PLAN_ID/media?size=full")"
+check "plan media type" "image/jpeg" \
+  "$(curl -s -o /dev/null -w '%{content_type}' "$API/s/$SHARE_TOKEN/plan/$PLAN_ID/media?size=full")"
+check "unknown plan page 404" "404" "$(curl -s -o /dev/null -w '%{http_code}' \
+  -H 'Accept: text/html' "$API/s/$SHARE_TOKEN/plan/$(uuid)")"
+check "plan page needs valid token" "404" \
+  "$(curl -s -o /dev/null -w '%{http_code}' "$API/s/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/plan/$PLAN_ID")"
+
+echo "== 7. Detached anchors disappear from the web view =="
+check "detach the last pin" "200" "$(code DELETE "/pins/$NEW_PIN" "$TOKEN")"
+curl -s -o /tmp/f43-plan2.html -H 'Accept: text/html' "$API/s/$SHARE_TOKEN/plan/$PLAN_ID"
+check "plan page shows no markers" "0" "$(grep -c 'class="pin"' /tmp/f43-plan2.html || true)"
+check "payload shows no pins" "0" "$(curl -s "$API/s/$SHARE_TOKEN" | jq -r '.plans[0].pins | length')"
+check "photo stays shared" "1" "$(curl -s "$API/s/$SHARE_TOKEN" | jq -r '.photos | length')"
 
 echo
 echo "PASS=$pass FAIL=$fail"

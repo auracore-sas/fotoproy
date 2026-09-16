@@ -1,8 +1,9 @@
 import { Controller, Get, HttpException, Param, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type { ShareErrorCode } from '@fotoproy/shared';
-import { SHARE_ERROR_CODES } from '@fotoproy/shared';
+import { SHARE_ERROR_CODES, uuidSchema } from '@fotoproy/shared';
 import { Public } from '../common/decorators/public.decorator.js';
+import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe.js';
 import { SharesService } from './shares.service.js';
 import { renderErrorPage } from './share-page.js';
 
@@ -110,6 +111,61 @@ export class PublicSharesController {
       }
     } catch (error) {
       this.respondError(response, error, html);
+    }
+  }
+
+  @Public()
+  @Get(':token/plan/:planId')
+  async viewPlan(
+    @Param('token') token: string,
+    @Param('planId', new ZodValidationPipe(uuidSchema)) planId: string,
+    @Req() request: Request,
+    @Res() response: Response,
+  ): Promise<void> {
+    response.setHeader('Cache-Control', 'no-store');
+    const html = prefersHtml(request.headers.accept);
+    try {
+      if (html) {
+        setPageHeaders(response);
+        response
+          .type('html')
+          .send(await this.sharesService.renderPlanDetailPage(token, planId, request));
+      } else {
+        const payload = await this.sharesService.viewPublic(token);
+        const plan = payload.plans.find((item) => item.id === planId);
+        if (!plan) {
+          throw new HttpException({ code: 'SHARE_NOT_FOUND', message: 'Plan not found' }, 404);
+        }
+        response.json(plan);
+      }
+    } catch (error) {
+      this.respondError(response, error, html);
+    }
+  }
+
+  @Public()
+  @Get(':token/plan/:planId/media')
+  async planMedia(
+    @Param('token') token: string,
+    @Param('planId', new ZodValidationPipe(uuidSchema)) planId: string,
+    @Query('size') size: string | undefined,
+    @Res() response: Response,
+  ): Promise<void> {
+    response.setHeader('Cache-Control', 'private, max-age=300');
+    try {
+      const media = await this.sharesService.streamPublicPlanMedia(
+        token,
+        planId,
+        size === 'full' ? 'full' : 'thumb',
+      );
+      response.setHeader('Content-Type', media.contentType);
+      if (media.contentLength !== undefined) {
+        response.setHeader('Content-Length', String(media.contentLength));
+      }
+      media.body.on('error', () => response.destroy());
+      media.body.pipe(response);
+    } catch (error) {
+      this.respondError(response, error, false);
     }
   }
 

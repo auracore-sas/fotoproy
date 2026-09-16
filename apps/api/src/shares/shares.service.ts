@@ -7,6 +7,7 @@ import type {
   CreateShareInput,
   Share,
   ShareListQuery,
+  SharedPlan,
   SharedProjectPayload,
 } from '@fotoproy/shared';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -14,7 +15,7 @@ import { StorageService } from '../storage/storage.service.js';
 import type { AuthedUser } from '../common/interfaces/auth-user.interface.js';
 import { generateShareToken, hashShareToken, isPlausibleShareToken } from './share-token.js';
 import { resolvePublicBaseUrl, type RequestLike } from './public-url.js';
-import { renderPhotoPage, renderProjectPage } from './share-page.js';
+import { renderPhotoPage, renderPlanPage, renderProjectPage } from './share-page.js';
 
 /** Content type by file extension (storage may not report one). */
 function contentTypeForKey(key: string): string {
@@ -115,6 +116,26 @@ export class SharesService {
       include: { user: { select: { fullName: true } } },
     });
 
+    // Plans + their anchors (detached pins are hidden). The read-only view
+    // shows where each photo was taken, which is the point of the plan map.
+    const plans = await this.prisma.projectPlan.findMany({
+      where: { projectId: share.projectId },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        pins: {
+          where: { removedAt: null },
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            photoId: true,
+            pageNumber: true,
+            xPercentage: true,
+            yPercentage: true,
+          },
+        },
+      },
+    });
+
     // Diagnostics only: never block (or fail) the public response on this.
     void this.prisma.share
       .update({
@@ -149,6 +170,26 @@ export class SharesService {
           capturedAt: photo.capturedAt.toISOString(),
         })),
       ),
+      plans: await Promise.all(
+        plans.map(async (plan): Promise<SharedPlan> => ({
+          id: plan.id,
+          title: plan.title,
+          planKind: plan.planKind,
+          pageCount: plan.pageCount,
+          url: await this.storage.presignGet(plan.storageKey),
+          thumbnailUrl: plan.thumbnailStorageKey
+            ? await this.storage.presignGet(plan.thumbnailStorageKey)
+            : null,
+          createdAt: plan.createdAt.toISOString(),
+          pins: plan.pins.map((pin) => ({
+            id: pin.id,
+            photoId: pin.photoId,
+            pageNumber: pin.pageNumber,
+            xPercentage: Number(pin.xPercentage),
+            yPercentage: Number(pin.yPercentage),
+          })),
+        })),
+      ),
     };
   }
 
@@ -174,6 +215,30 @@ export class SharesService {
     }
     const key =
       variant === 'thumb' ? (photo.thumbnailStorageKey ?? photo.storageKey) : photo.storageKey;
+    const object = await this.storage.getObjectStream(key);
+    return {
+      body: object.body,
+      contentType: object.contentType ?? contentTypeForKey(key),
+      contentLength: object.contentLength,
+    };
+  }
+
+  /** Streams a plan file (or its thumbnail) for the public web view. */
+  async streamPublicPlanMedia(
+    token: string,
+    planId: string,
+    variant: 'thumb' | 'full',
+  ): Promise<{ body: Readable; contentType: string; contentLength?: number }> {
+    const share = await this.resolveShare(token);
+    const plan = await this.prisma.projectPlan.findFirst({
+      where: { id: planId, projectId: share.projectId },
+      select: { storageKey: true, thumbnailStorageKey: true },
+    });
+    if (!plan) {
+      throw new NotFoundException({ code: 'SHARE_NOT_FOUND', message: 'Plan not found' });
+    }
+    const key =
+      variant === 'thumb' ? (plan.thumbnailStorageKey ?? plan.storageKey) : plan.storageKey;
     const object = await this.storage.getObjectStream(key);
     return {
       body: object.body,
@@ -223,6 +288,19 @@ export class SharesService {
       throw new NotFoundException({ code: 'SHARE_NOT_FOUND', message: 'Photo not found' });
     }
     return renderPhotoPage(payload, photo, token, this.baseUrl(request));
+  }
+
+  /**
+   * HTML page of a plan with its anchors (`GET /s/:token/plan/:planId`), so a
+   * client can see WHERE each photo was taken, not only the photo list.
+   */
+  async renderPlanDetailPage(token: string, planId: string, request: RequestLike): Promise<string> {
+    const payload = await this.viewPublic(token);
+    const plan = payload.plans.find((item) => item.id === planId);
+    if (!plan) {
+      throw new NotFoundException({ code: 'SHARE_NOT_FOUND', message: 'Plan not found' });
+    }
+    return renderPlanPage(payload, plan, token, this.baseUrl(request));
   }
 
   /** Full public link built from the configured base URL (or the request). */
