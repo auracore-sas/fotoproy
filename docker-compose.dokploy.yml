@@ -59,6 +59,23 @@ services:
       STORAGE_SIGNED_URL_TTL: ${STORAGE_SIGNED_URL_TTL:-3600}
       STORAGE_GENERATE_THUMBS: ${STORAGE_GENERATE_THUMBS:-true}
       STORAGE_STAMP_PHOTOS: ${STORAGE_STAMP_PHOTOS:-true}
+      STORAGE_STRIP_EXIF: ${STORAGE_STRIP_EXIF:-true}
+      # F4.5 — upload caps (MB) and rate limiting. Defaults come from the shared
+      # contract; override them in the Dokploy Environment tab if needed.
+      UPLOAD_MAX_PHOTO_MB: ${UPLOAD_MAX_PHOTO_MB:-25}
+      UPLOAD_MAX_VIDEO_MB: ${UPLOAD_MAX_VIDEO_MB:-200}
+      UPLOAD_MAX_PLAN_MB: ${UPLOAD_MAX_PLAN_MB:-40}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-600}
+      RATE_LIMIT_PUBLIC_MAX: ${RATE_LIMIT_PUBLIC_MAX:-120}
+      RATE_LIMIT_MEDIA_MAX: ${RATE_LIMIT_MEDIA_MAX:-1200}
+      # Cloudflare is in front of both domains here, so the real visitor comes in
+      # `CF-Connecting-IP`. Set to false if the origin ever becomes reachable
+      # directly (otherwise the header could be spoofed to dodge the limit).
+      RATE_LIMIT_TRUST_CF_HEADER: ${RATE_LIMIT_TRUST_CF_HEADER:-true}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      JSON_BODY_LIMIT: ${JSON_BODY_LIMIT:-1mb}
       RUN_MIGRATIONS_ON_START: ${RUN_MIGRATIONS_ON_START:-true}
     networks:
       - dokploy-network

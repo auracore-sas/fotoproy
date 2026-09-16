@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import type { ProjectPlan as DbPlan } from '@fotoproy/database';
 import type {
@@ -21,6 +22,7 @@ import {
   planStorageKey,
   thumbnailStorageKey,
 } from '../storage/object-keys.js';
+import { uploadLimitBytes } from '../common/upload-limits.js';
 import type { AuthedUser } from '../common/interfaces/auth-user.interface.js';
 
 const ALLOWED_PLAN_EXTS = ['jpg', 'png', 'webp', 'heic', 'pdf'];
@@ -64,6 +66,18 @@ export class PlansService {
     input: PresignPlanUploadInput,
   ): Promise<PresignUploadResponse> {
     await this.requireProject(current.organizationId, input.projectId);
+
+    // F4.5 — same early size gate as photos; verified again on commit.
+    const limit = uploadLimitBytes('PLAN');
+    if (input.sizeBytes !== undefined && input.sizeBytes > limit) {
+      throw new PayloadTooLargeException({
+        code: 'UPLOAD_TOO_LARGE',
+        message: 'Plan file exceeds the upload limit',
+        limitBytes: limit,
+        sizeBytes: input.sizeBytes,
+      });
+    }
+
     const ext = extensionForContentType(input.contentType);
     const storageKey = planStorageKey(current.organizationId, input.id, ext);
     const uploadUrl = await this.storage.presignPut(storageKey);
@@ -102,6 +116,37 @@ export class PlansService {
     const expectedKey = this.expectedKey(current.organizationId, input);
     if (input.storageKey !== expectedKey) {
       throw new ForbiddenException('storageKey does not match the pre-signed object');
+    }
+
+    // F4.5 — the file must really exist and fit the cap before the plan is
+    // registered (a missing object would render an empty viewer).
+    const stored = await this.storage.headObject(input.storageKey);
+    if (!stored) {
+      throw new BadRequestException({
+        code: 'UPLOAD_MISSING',
+        message: 'The object was not found in storage; upload it before registering the plan',
+      });
+    }
+    const limit = uploadLimitBytes('PLAN');
+    if (stored.contentLength > limit) {
+      await this.storage.deleteObject(input.storageKey);
+      throw new PayloadTooLargeException({
+        code: 'UPLOAD_TOO_LARGE',
+        message: 'Stored plan file exceeds the limit and was removed',
+        limitBytes: limit,
+        sizeBytes: stored.contentLength,
+      });
+    }
+
+    // Plans are images or PDFs; anything else is rejected (the declared content
+    // type is not proof of what was stored).
+    const storedType = stored.contentType ?? '';
+    if (!storedType.startsWith('image/') && storedType !== 'application/pdf') {
+      await this.storage.deleteObject(input.storageKey);
+      throw new BadRequestException({
+        code: 'UPLOAD_TYPE_MISMATCH',
+        message: `Stored file is not an image or PDF (content type: ${storedType || 'unknown'})`,
+      });
     }
 
     const plan = await this.prisma.projectPlan.create({

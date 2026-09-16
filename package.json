@@ -24,6 +24,8 @@
     "photo:download": "node --env-file=apps/api/.env apps/api/scripts/download-photo.mjs",
     "check:prod": "node apps/api/scripts/production-check.mjs",
     "check:prod:cleanup": "node apps/api/scripts/production-check-cleanup.mjs",
+    "check:hardening": "node apps/api/scripts/verify-hardening.mjs",
+    "check:secrets": "bash scripts/check-secrets.sh",
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
     "db:migrate": "pnpm --filter @fotoproy/database db:migrate",

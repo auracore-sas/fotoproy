@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { RateLimitModule } from './common/rate-limit/rate-limit.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { HealthModule } from './health/health.module.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -15,6 +16,8 @@ import { SharesModule } from './shares/shares.module.js';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // First on purpose: the limiter must run before authentication.
+    RateLimitModule,
     PrismaModule,
     StorageModule,
     HealthModule,

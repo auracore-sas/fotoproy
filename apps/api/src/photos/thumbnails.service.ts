@@ -22,8 +22,10 @@ import { thumbnailStorageKey } from '../storage/object-keys.js';
 @Injectable()
 export class ThumbnailsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ThumbnailsService.name);
-  private readonly enabled: boolean;
+  private readonly generateThumbs: boolean;
   private readonly stampEnabled: boolean;
+  /** Re-encodes the stored photo even without the stamp, dropping EXIF/GPS (F4.5). */
+  private readonly stripExif: boolean;
   private readonly sweepIntervalMs = 5 * 60 * 1000;
   private timer?: NodeJS.Timeout;
   /** In-flight ids so the sweep never duplicates a running job. */
@@ -34,14 +36,23 @@ export class ThumbnailsService implements OnModuleInit, OnModuleDestroy {
     private readonly storage: StorageService,
     config: ConfigService,
   ) {
-    this.enabled = (config.get<string>('STORAGE_GENERATE_THUMBS') ?? 'true') === 'true';
+    this.generateThumbs = (config.get<string>('STORAGE_GENERATE_THUMBS') ?? 'true') === 'true';
     this.stampEnabled = (config.get<string>('STORAGE_STAMP_PHOTOS') ?? 'true') === 'true';
+    this.stripExif = (config.get<string>('STORAGE_STRIP_EXIF') ?? 'true') === 'true';
+  }
+
+  /** True when any step of the pipeline has work to do. */
+  private get processingEnabled(): boolean {
+    return this.generateThumbs || this.stampEnabled || this.stripExif;
   }
 
   onModuleInit(): void {
-    if (!this.enabled) {
-      this.logger.warn('Thumbnail generation is disabled (STORAGE_GENERATE_THUMBS=false)');
+    if (!this.processingEnabled) {
+      this.logger.warn('Photo processing is disabled (thumbs, stamp and EXIF strip are off)');
       return;
+    }
+    if (this.stripExif) {
+      this.logger.log('EXIF/GPS metadata is stripped from stored photos');
     }
     this.timer = setInterval(() => {
       void this.sweep().catch((error) =>
@@ -63,7 +74,7 @@ export class ThumbnailsService implements OnModuleInit, OnModuleDestroy {
 
   /** Fire-and-forget processing for a just-created photo. */
   schedule(photoId: string): void {
-    if (!this.enabled) {
+    if (!this.processingEnabled) {
       return;
     }
     void this.process(photoId).catch((error) =>
@@ -100,26 +111,40 @@ export class ThumbnailsService implements OnModuleInit, OnModuleDestroy {
       const { default: sharp } = await import('sharp');
       const original = await this.storage.getObject(photo.storageKey);
 
-      // Optional evidence stamp: oriented JPEG + top band, then the stored
-      // original is replaced so local/remote and thumbnails stay consistent.
+      // Re-encoding normalises orientation and drops metadata: sharp keeps
+      // EXIF/GPS only when `withMetadata()` is called, so this is what strips it
+      // (F4.5 — the camera may have written the capture location).
       let source = original;
+      let replaceStored = false;
+      if (this.stampEnabled || this.stripExif) {
+        source = await sharp(original).rotate().jpeg({ quality: 88, mozjpeg: true }).toBuffer();
+        replaceStored = this.stripExif;
+      }
+
+      // Optional evidence stamp band on top of the normalised image.
       if (this.stampEnabled) {
-        const oriented = await sharp(original)
-          .rotate()
-          .jpeg({ quality: 88, mozjpeg: true })
-          .toBuffer();
-        const { width } = await sharp(oriented).metadata();
+        const { width } = await sharp(source).metadata();
         if (width && width > 0) {
           const signer =
             (author?.signature ?? '').trim() || (author?.fullName ?? '').trim() || null;
           const svg = buildStampSvg(width, photo, signer, project.code);
-          source = await sharp(oriented)
+          source = await sharp(source)
             .composite([{ input: svg, top: 0, left: 0 }])
             .jpeg({ quality: 88, mozjpeg: true })
             .toBuffer();
-          await this.storage.putObject(photo.storageKey, source, 'image/jpeg');
+          replaceStored = true;
           this.logger.log(`Evidence stamp burned for photo ${photoId}`);
         }
+      }
+
+      // One write for both steps: the stored original ends up normalised, free of
+      // metadata and (when enabled) carrying the stamp.
+      if (replaceStored) {
+        await this.storage.putObject(photo.storageKey, source, 'image/jpeg');
+      }
+
+      if (!this.generateThumbs) {
+        return;
       }
 
       const thumb = await sharp(source)
@@ -141,7 +166,9 @@ export class ThumbnailsService implements OnModuleInit, OnModuleDestroy {
 
   /** Backfills photos that are missing a thumbnail (idempotent). */
   async sweep(): Promise<void> {
-    if (!this.enabled) {
+    // Without thumbnails there is nothing to backfill: the query below would
+    // return every photo forever.
+    if (!this.generateThumbs) {
       return;
     }
     const missing = await this.prisma.photo.findMany({

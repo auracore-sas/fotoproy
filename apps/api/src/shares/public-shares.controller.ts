@@ -1,7 +1,12 @@
 import { Controller, Get, HttpException, Param, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import type { ShareErrorCode } from '@fotoproy/shared';
-import { SHARE_ERROR_CODES, uuidSchema } from '@fotoproy/shared';
+import type { ShareErrorCode, ShareMediaQuery } from '@fotoproy/shared';
+import {
+  SHARE_ERROR_CODES,
+  shareMediaQuerySchema,
+  shareTokenSchema,
+  uuidSchema,
+} from '@fotoproy/shared';
 import { Public } from '../common/decorators/public.decorator.js';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe.js';
 import { SharesService } from './shares.service.js';
@@ -67,7 +72,7 @@ export class PublicSharesController {
   @Public()
   @Get(':token')
   async view(
-    @Param('token') token: string,
+    @Param('token', new ZodValidationPipe(shareTokenSchema)) token: string,
     @Req() request: Request,
     @Res() response: Response,
   ): Promise<void> {
@@ -88,8 +93,8 @@ export class PublicSharesController {
   @Public()
   @Get(':token/p/:photoId')
   async viewPhoto(
-    @Param('token') token: string,
-    @Param('photoId') photoId: string,
+    @Param('token', new ZodValidationPipe(shareTokenSchema)) token: string,
+    @Param('photoId', new ZodValidationPipe(uuidSchema)) photoId: string,
     @Req() request: Request,
     @Res() response: Response,
   ): Promise<void> {
@@ -117,7 +122,7 @@ export class PublicSharesController {
   @Public()
   @Get(':token/plan/:planId')
   async viewPlan(
-    @Param('token') token: string,
+    @Param('token', new ZodValidationPipe(shareTokenSchema)) token: string,
     @Param('planId', new ZodValidationPipe(uuidSchema)) planId: string,
     @Req() request: Request,
     @Res() response: Response,
@@ -146,18 +151,14 @@ export class PublicSharesController {
   @Public()
   @Get(':token/plan/:planId/media')
   async planMedia(
-    @Param('token') token: string,
+    @Param('token', new ZodValidationPipe(shareTokenSchema)) token: string,
     @Param('planId', new ZodValidationPipe(uuidSchema)) planId: string,
-    @Query('size') size: string | undefined,
+    @Query(new ZodValidationPipe(shareMediaQuerySchema)) query: ShareMediaQuery,
     @Res() response: Response,
   ): Promise<void> {
     response.setHeader('Cache-Control', 'private, max-age=300');
     try {
-      const media = await this.sharesService.streamPublicPlanMedia(
-        token,
-        planId,
-        size === 'full' ? 'full' : 'thumb',
-      );
+      const media = await this.sharesService.streamPublicPlanMedia(token, planId, query.size);
       response.setHeader('Content-Type', media.contentType);
       if (media.contentLength !== undefined) {
         response.setHeader('Content-Length', String(media.contentLength));
@@ -172,19 +173,15 @@ export class PublicSharesController {
   @Public()
   @Get(':token/media/:photoId')
   async media(
-    @Param('token') token: string,
-    @Param('photoId') photoId: string,
-    @Query('size') size: string | undefined,
+    @Param('token', new ZodValidationPipe(shareTokenSchema)) token: string,
+    @Param('photoId', new ZodValidationPipe(uuidSchema)) photoId: string,
+    @Query(new ZodValidationPipe(shareMediaQuerySchema)) query: ShareMediaQuery,
     @Res() response: Response,
   ): Promise<void> {
     // Public pages must never be cached by shared proxies: the link can be revoked.
     response.setHeader('Cache-Control', 'private, max-age=300');
     try {
-      const media = await this.sharesService.streamPublicMedia(
-        token,
-        photoId,
-        size === 'full' ? 'full' : 'thumb',
-      );
+      const media = await this.sharesService.streamPublicMedia(token, photoId, query.size);
       response.setHeader('Content-Type', media.contentType);
       if (media.contentLength !== undefined) {
         response.setHeader('Content-Length', String(media.contentLength));

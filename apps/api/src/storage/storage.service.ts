@@ -5,6 +5,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
+  HeadObjectCommand,
   PutBucketCorsCommand,
   PutObjectCommand,
   S3Client,
@@ -183,8 +184,33 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  /** Downloads an object into memory (server-side operations only). */
-  async getObject(key: string): Promise<Buffer> {
+  /**
+   * Metadata of a stored object, or `null` when it does not exist.
+   *
+   * Used to verify that a client really uploaded what it claims before a media
+   * record is created (existence + size cap), so the commit step cannot be used
+   * to register missing or oversized objects.
+   */
+  async headObject(key: string): Promise<{ contentLength: number; contentType?: string } | null> {
+    try {
+      const result = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.config.bucket, Key: key }),
+      );
+      return { contentLength: result.ContentLength ?? 0, contentType: result.ContentType };
+    } catch (error) {
+      const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata
+        ?.httpStatusCode;
+      const name = (error as { name?: string }).name;
+      if (status === 404 || name === 'NotFound' || name === 'NoSuchKey') {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  /** Downloads an object into memory (server-side operations only). */ async getObject(
+    key: string,
+  ): Promise<Buffer> {
     const response = await this.client.send(
       new GetObjectCommand({ Bucket: this.config.bucket, Key: key }),
     );

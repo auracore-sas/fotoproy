@@ -353,25 +353,56 @@ Reglas:
 
 ---
 
-## 7. Seguridad mínima antes de exponer la API
+## 7. Seguridad y robustez (F4.5)
 
-Ya viene hecho: HTTPS obligatorio, bucket privado, URLs firmadas con caducidad,
-token de enlace hasheado en la base, `no-store` en las páginas públicas, CORS
-restringido, contenedor sin privilegios.
+### Implementado
 
-**Pendiente de F4.5** (recomendado antes de difundir el enlace a clientes):
+| Control                  | Cómo funciona                                                                                                                                                                                                                                                                                  | Variables                                                                                                                                          |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Rate limiting**        | Limitador en memoria (ventana fija) por IP de cliente, con tres bolsas: API autenticada, páginas públicas y proxy de medios. Responde **429** con `Retry-After` y `X-RateLimit-*`. Corre **antes** de la autenticación, así que un flood no llega a verificar JWT ni a tocar la base de datos. | `RATE_LIMIT_ENABLED`, `RATE_LIMIT_WINDOW_SECONDS`, `RATE_LIMIT_MAX`, `RATE_LIMIT_PUBLIC_MAX`, `RATE_LIMIT_MEDIA_MAX`, `RATE_LIMIT_TRUST_CF_HEADER` |
+| **Límite de subida**     | Los objetos van directos al storage, así que se valida **dos veces**: al firmar la URL (si el cliente declara `sizeBytes` se rechaza antes de gastar ancho de banda) y al registrar el objeto (`HEAD` real contra el bucket: si excede el tope se **borra** el objeto y se responde 413).      | `UPLOAD_MAX_PHOTO_MB`, `UPLOAD_MAX_VIDEO_MB`, `UPLOAD_MAX_PLAN_MB`                                                                                 |
+| **Objeto inexistente**   | Al registrar una foto o un plano se comprueba que el objeto exista de verdad (`400 UPLOAD_MISSING`): antes se podía crear un registro sin archivo y la galería quedaba rota.                                                                                                                   | —                                                                                                                                                  |
+| **Tipo real del objeto** | Se verifica el `Content-Type` almacenado (imagen/vídeo para medios, imagen/PDF para planos) y se rechaza con `400 UPLOAD_TYPE_MISMATCH` si no cuadra.                                                                                                                                          | —                                                                                                                                                  |
+| **EXIF/GPS fuera**       | El pipeline re-codifica la foto con `sharp` (sin `withMetadata()`, que es lo que conserva los metadatos) antes de guardarla.                                                                                                                                                                   | `STORAGE_STRIP_EXIF`                                                                                                                               |
+| **Validación estricta**  | Todos los endpoints validan con los schemas zod de `@fotoproy/shared`; los **cuerpos** rechazan campos desconocidos (400) en lugar de ignorarlos. Queries y params se validan en sus campos y siguen tolerando parámetros extra (cache busters).                                               | —                                                                                                                                                  |
+| **Cuerpo JSON acotado**  | El parser JSON acepta como máximo `JSON_BODY_LIMIT` (1 MB). Los medios nunca pasan por la API.                                                                                                                                                                                                 | `JSON_BODY_LIMIT`                                                                                                                                  |
+| **Guardián de secretos** | `pnpm check:secrets` falla si hay un `.env` versionado o un patrón de secreto real (clave privada, `AKIA…`, URL de BD con contraseña, `JWT_SECRET` en claro) en archivos rastreados.                                                                                                           | —                                                                                                                                                  |
 
-- [ ] **Rate limiting** en los endpoints públicos (`/s/:token` y el proxy de
-      medios): hoy no hay límite y los enlaces son accesibles sin autenticación.
-- [ ] Límite de tamaño de subida y validación estricta zod en todos los endpoints.
-- [ ] Borrado de metadatos EXIF en el original antes de publicar.
-- [ ] Revisión de secretos (que ningún `.env` haya entrado a Git).
+Notas de operación:
+
+- **Límites atrás de Cloudflare**: la IP real llega en `CF-Connecting-IP`
+  (`RATE_LIMIT_TRUST_CF_HEADER=true`, que es el caso de este servidor). Si algún
+  día el origen queda accesible **directamente**, ponlo en `false`; si no,
+  cualquiera podría falsificar esa cabecera y saltarse el límite.
+- **`TRUST_PROXY`** queda en `false` por defecto por el mismo motivo. Solo se
+  pone a `1` (o al número de proxies) cuando la app recibe tráfico únicamente a
+  través de ellos.
+- Los contadores viven **en memoria del proceso**: se reinician con cada
+  despliegue y son por instancia. Suficiente para un contenedor; con varias
+  réplicas haría falta un almacén compartido (Redis).
+- Los **smoke tests** (`smoke:shares`, `smoke:pins`) hacen decenas de peticiones
+  públicas: si se ejecutan varias veces por minuto contra el mismo entorno,
+  chocan con el límite. Arranca la API de desarrollo con `RATE_LIMIT_ENABLED=false`
+  al correrlos, o espera a que pase la ventana.
+- Verificación automatizada: `pnpm check:hardening` (necesita la API con
+  `UPLOAD_MAX_PHOTO_MB=1` para que la prueba de exceso sea barata).
+
+### Pendiente de F4.5 / endurecimiento del servidor
+
 - [ ] **Rotar los secretos que se compartieron en texto plano** (contraseña de
       PostgreSQL, `JWT_SECRET` y credenciales de MinIO).
 - [ ] **Usuario dedicado de MinIO** en lugar del root (`admin`): el usuario root
       da acceso a **todos** los buckets del servidor, incluidos los de otros
       proyectos (`plane-uploads`, `aurafac`, `nocodb`…). Política con alcance
       solo a `fotoproy` en §3.3.
+- [ ] **Cloudflare** → `minio-api.apx5.com` en **DNS only**: además del tope de
+      100 MB en subidas, un origen accesible directamente permite saltarse
+      `CF-Connecting-IP`.
+- [ ] **PostgreSQL** con usuario/base dedicados (hoy `postgres` sobre la IP de
+      la LAN) y sin publicar el 5432 fuera del host.
+- [ ] **Vídeos y EXIF**: los vídeos no se re-codifican (haría falta ffmpeg), así
+      que pueden conservar metadatos de la cámara. Documentado como limitación
+      conocida del MVP.
 
 ---
 
@@ -428,4 +459,14 @@ de sincronización y los planos offline no dependen del despliegue.
       — con los datos de prueba borrados al terminar (`pnpm check:prod` +
       `pnpm check:prod:cleanup`).
 - [ ] Falta la subida desde el **teléfono** contra producción (build de F4.6).
+- [x] **F4.5 — seguridad y robustez (2026-09-16)**: rate limiting por IP en
+      tres bolsas (API / páginas públicas / proxy de medios) antes de la
+      autenticación, límites de subida verificados contra el objeto real en el
+      bucket, rechazo de objetos inexistentes y de tipo incorrecto, EXIF/GPS
+      eliminado de las fotos almacenadas, cuerpos de petición estrictos
+      (campos desconocidos → 400), cuerpo JSON acotado y `pnpm check:secrets`.
+      Verificado con `pnpm check:hardening` (13/13), `smoke:shares` 44/44 y
+      `smoke:pins` 39/39.
+- [ ] Endurecimiento del servidor: rotar secretos, usuario dedicado de MinIO,
+      Cloudflare en DNS only para el API S3, PostgreSQL con usuario dedicado.
 - [ ] CI de despliegue (opcional): hoy el release es `git push` + Deploy.

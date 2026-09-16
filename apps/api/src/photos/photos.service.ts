@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import type { Photo as DbPhoto } from '@fotoproy/database';
 import type {
@@ -20,6 +21,7 @@ import {
   mediaStorageKey,
   thumbnailStorageKey,
 } from '../storage/object-keys.js';
+import { uploadLimitBytes } from '../common/upload-limits.js';
 import { ThumbnailsService } from './thumbnails.service.js';
 import type { AuthedUser } from '../common/interfaces/auth-user.interface.js';
 
@@ -73,6 +75,21 @@ export class PhotosService {
     input: PresignPhotoUploadInput,
   ): Promise<PresignUploadResponse> {
     await this.requireProject(current.organizationId, input.projectId);
+
+    // F4.5 — reject an oversized upload before the client spends bandwidth on
+    // it. The authoritative check happens in `create()` against the stored
+    // object, because this size is client-declared.
+    const kind = input.contentType === 'video/mp4' ? 'VIDEO' : 'PHOTO';
+    const limit = uploadLimitBytes(kind);
+    if (input.sizeBytes !== undefined && input.sizeBytes > limit) {
+      throw new PayloadTooLargeException({
+        code: 'UPLOAD_TOO_LARGE',
+        message: `Upload exceeds the ${kind.toLowerCase()} limit`,
+        limitBytes: limit,
+        sizeBytes: input.sizeBytes,
+      });
+    }
+
     const ext = extensionForContentType(input.contentType);
     const storageKey = mediaStorageKey(current.organizationId, input.id, ext);
     const uploadUrl = await this.storage.presignPut(storageKey);
@@ -119,6 +136,39 @@ export class PhotosService {
     }
     if (input.kind === 'VIDEO' && input.durationMs === undefined) {
       throw new BadRequestException('durationMs is required for videos');
+    }
+
+    // F4.5 — the object must exist and fit the cap before the record is created:
+    // otherwise a client could register media that was never uploaded (broken
+    // galleries, empty thumbnails) or park arbitrarily large files in the bucket.
+    const stored = await this.storage.headObject(input.storageKey);
+    if (!stored) {
+      throw new BadRequestException({
+        code: 'UPLOAD_MISSING',
+        message: 'The object was not found in storage; upload it before registering the media',
+      });
+    }
+    const limit = uploadLimitBytes(input.kind);
+    if (stored.contentLength > limit) {
+      await this.storage.deleteObject(input.storageKey);
+      throw new PayloadTooLargeException({
+        code: 'UPLOAD_TOO_LARGE',
+        message: `Stored object exceeds the ${input.kind.toLowerCase()} limit and was removed`,
+        limitBytes: limit,
+        sizeBytes: stored.contentLength,
+      });
+    }
+
+    // The declared content type is only a promise: check what the client
+    // actually stored, so a text file cannot be registered as a photo/video.
+    const expectedPrefix = input.kind === 'VIDEO' ? 'video/' : 'image/';
+    const storedType = stored.contentType ?? '';
+    if (!storedType.startsWith(expectedPrefix)) {
+      await this.storage.deleteObject(input.storageKey);
+      throw new BadRequestException({
+        code: 'UPLOAD_TYPE_MISMATCH',
+        message: `Stored object is not a ${input.kind.toLowerCase()} (content type: ${storedType || 'unknown'})`,
+      });
     }
 
     const photo = await this.prisma.photo.create({

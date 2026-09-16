@@ -183,6 +183,8 @@ export const presignPlanUploadSchema = z.object({
   id: uuidSchema,
   projectId: uuidSchema,
   contentType: z.enum(UPLOADABLE_PLAN_TYPES),
+  /** Expected object size, so an oversized upload is rejected before it starts. */
+  sizeBytes: z.number().int().positive().optional(),
 });
 export type PresignPlanUploadInput = z.infer<typeof presignPlanUploadSchema>;
 
@@ -262,11 +264,32 @@ export const UPLOADABLE_MEDIA_TYPES = [
 ] as const;
 export type UploadableMediaType = (typeof UPLOADABLE_MEDIA_TYPES)[number];
 
+/**
+ * Hard caps for objects uploaded straight to storage. The API enforces them at
+ * pre-sign time (when the client declares `sizeBytes`) and, authoritatively, by
+ * checking the stored object when the media item is registered.
+ */
+export const MAX_UPLOAD_BYTES = {
+  photo: 25 * 1024 * 1024,
+  video: 200 * 1024 * 1024,
+  plan: 40 * 1024 * 1024,
+} as const;
+
+/** Stable error code returned (413) when an upload exceeds its cap. */
+export const UPLOAD_ERROR_CODES = [
+  'UPLOAD_TOO_LARGE',
+  'UPLOAD_MISSING',
+  'UPLOAD_TYPE_MISMATCH',
+] as const;
+export type UploadErrorCode = (typeof UPLOAD_ERROR_CODES)[number];
+
 export const presignPhotoUploadSchema = z.object({
   /** Client UUID of the media item (also used as the object name). */
   id: uuidSchema,
   projectId: uuidSchema,
   contentType: z.enum(UPLOADABLE_MEDIA_TYPES),
+  /** Expected object size, so an oversized upload is rejected before it starts. */
+  sizeBytes: z.number().int().positive().optional(),
 });
 export type PresignPhotoUploadInput = z.infer<typeof presignPhotoUploadSchema>;
 
@@ -369,6 +392,27 @@ export const SHARE_VALIDITY_DAYS = [7, 30, 90, 365] as const;
 /** Stable codes the public page uses to explain a dead link (F4.2). */
 export const SHARE_ERROR_CODES = ['SHARE_NOT_FOUND', 'SHARE_EXPIRED', 'SHARE_REVOKED'] as const;
 export type ShareErrorCode = (typeof SHARE_ERROR_CODES)[number];
+
+/**
+ * Shape of a public share token (url-safe base64, 256 bits).
+ *
+ * Deliberately permissive on length and characters that are still plausible: a
+ * malformed token must reach the lookup and answer 404, so the public endpoint
+ * never reveals whether a token is well-formed. Only input that could not be a
+ * token at all (empty, huge, separator characters) is rejected early.
+ */
+export const shareTokenSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(/^[A-Za-z0-9_-]+$/);
+
+/** Query of the public media proxies. */
+export const shareMediaQuerySchema = z.object({
+  size: z.enum(['thumb', 'full']).default('thumb'),
+});
+export type ShareMediaQuery = z.infer<typeof shareMediaQuerySchema>;
 
 export const createShareInputSchema = z.object({
   projectId: uuidSchema,
