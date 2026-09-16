@@ -5,147 +5,178 @@
 > crítico de negocio del roadmap).
 >
 > Estado: **infraestructura lista y verificada** (imagen Docker, Compose de
-> producción, Caddy con TLS, script de despliegue, migraciones al arrancar).
-> Falta ejecutarla con el dominio y las credenciales R2 reales — ver §2.
+> producción, Caddy con TLS, script de despliegue, migraciones al arrancar,
+> endpoint interno/público de storage). Falta cargar las variables en Dokploy y
+> desplegar — ver §3.
 
 ---
 
 ## 1. Qué se despliega
 
-| Pieza            | Decisión                                                        | Notas                                                                                                      |
-| ---------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| API (NestJS)     | Contenedor Docker (`Dockerfile`, raíz del repo)                 | Puerto interno `4100`, escucha en `0.0.0.0`.                                                               |
-| TLS / proxy      | Según el host: **Dokploy+Traefik** · Caddy · TLS del PaaS       | Dokploy y los PaaS lo gestionan solos; en VPS desnudo lo hace `deploy/caddy/Caddyfile`.                    |
-| PostgreSQL 16    | El que ya tengas (Dokploy, Neon, RDS…) o el contenedor opcional | PostGIS **no** hace falta: las coordenadas son `Decimal` (decisión F0.4).                                  |
-| Archivos (fotos) | Cloudflare R2 (S3 API)                                          | El bucket queda **privado**; la app sube con pre-signed URLs y la web pública pasa por el proxy de la API. |
-| Migraciones      | `prisma migrate deploy`                                         | Automáticas al arrancar con `RUN_MIGRATIONS_ON_START=true`, o manuales con `scripts/deploy.sh`.            |
-| App móvil        | Expo / EAS (F4.6)                                               | `EXPO_PUBLIC_API_URL` se **hornea en el build**: apuntar a producción exige build nuevo.                   |
+| Pieza            | Decisión                                        | Notas                                                                                        |
+| ---------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| API (NestJS)     | Contenedor Docker (`Dockerfile`, raíz del repo) | Puerto interno `4100`, escucha en `0.0.0.0`. **Stateless**: no escribe nada en disco.        |
+| TLS / proxy      | **Dokploy + Traefik** (ya instalado)            | Dokploy añade las etiquetas de Traefik y emite el certificado Let's Encrypt.                 |
+| PostgreSQL 16    | El servicio que **ya corre en Dokploy**         | PostGIS **no** hace falta: las coordenadas son `Decimal` (decisión F0.4).                    |
+| Archivos (fotos) | El **MinIO que ya corre en Dokploy** (S3 API)   | El bucket queda privado; la API sube/baja con pre-signed URLs y la web pública va por proxy. |
+| Migraciones      | `prisma migrate deploy`                         | Automáticas al arrancar con `RUN_MIGRATIONS_ON_START=true`.                                  |
+| App móvil        | Expo / EAS (F4.6)                               | `EXPO_PUBLIC_API_URL` se **hornea en el build**: apuntar a producción exige build nuevo.     |
 
 El móvil **no** se despliega aquí: solo la API. Sin el despliegue, los enlaces
 `http://192.168.x.x:4100/s/<token>` solo abren dentro de la red de la oficina.
+
+### Datos en el servidor (`/srv/fotoproy`)
+
+**La aplicación de la API no necesita ningún volumen**: no guarda archivos en
+disco (las fotos van a MinIO, los thumbnails se generan en memoria y se suben).
+Los datos reales viven en los volúmenes de los servicios **MinIO** y
+**PostgreSQL** que gestiona Dokploy, y ahí es donde tiene sentido apuntar a
+`/srv/fotoproy` si quieres tenerlos bajo esa ruta (se configura en cada servicio
+de base de datos/almacenamiento del panel, no en la aplicación de la API).
 
 ---
 
 ## 2. Lo que necesito de ti
 
-Nada de esto está en el repo (son cuentas, credenciales y decisiones tuyas).
-
 ### 2.1 Decisiones
 
-| #   | Decisión              | Estado                                                                                        |
-| --- | --------------------- | --------------------------------------------------------------------------------------------- |
-| 1   | Dónde corre la API    | ✅ **Dokploy** en servidor propio (opción A, §3). Alternativas: VPS desnudo (§4) o PaaS (§5). |
-| 2   | Dónde vive PostgreSQL | ✅ **PostgreSQL 16 ya existente en Dokploy**.                                                 |
-| 3   | Dominio y DNS         | ⏳ Falta: subdominio tipo `api.tudominio.com` apuntando al servidor (DNS en Cloudflare).      |
+| #   | Decisión              | Estado                                                                         |
+| --- | --------------------- | ------------------------------------------------------------------------------ |
+| 1   | Dónde corre la API    | ✅ **Dokploy** en servidor propio (§3).                                        |
+| 2   | Dónde vive PostgreSQL | ✅ Servicio **PostgreSQL 16 ya existente** en Dokploy.                         |
+| 3   | Dónde vive el storage | ✅ Servicio **MinIO ya existente** en Dokploy.                                 |
+| 4   | Dominio y DNS         | ✅ **`fotoproy.apx5.com`** para la API. Falta decidir el subdominio del MinIO. |
 
 ### 2.2 Credenciales y accesos
 
-| #   | Qué                                                           | Dónde se saca                                                    | Estado   |
-| --- | ------------------------------------------------------------- | ---------------------------------------------------------------- | -------- |
-| 4   | **Cloudflare R2**: bucket + API token (_Object Read & Write_) | Cloudflare → R2 → Manage API tokens                              | ⏳ Falta |
-| 5   | **Acceso al servidor Dokploy**                                | Ya disponible (panel Dokploy)                                    | ✅       |
-| 6   | **Expo/EAS + tiendas** (solo F4.6)                            | expo.dev · Apple Developer 99 USD/año · Google Play 25 USD único | ⏳ Falta |
+| #   | Qué                                                 | Cómo se obtiene                                                        | Estado   |
+| --- | --------------------------------------------------- | ---------------------------------------------------------------------- | -------- |
+| 5   | **MinIO**: endpoint interno, usuario/clave y bucket | Panel de Dokploy → servicio MinIO (credenciales y URL interna)         | ⏳ Falta |
+| 6   | **PostgreSQL**: URL interna                         | Panel de Dokploy → servicio PostgreSQL → _Internal Connection URL_     | ⏳ Falta |
+| 7   | **Dominio del MinIO** (p. ej. `minio.apx5.com`)     | Dokploy → MinIO → Domains (HTTPS). Necesario para que el teléfono suba | ⏳ Falta |
+| 8   | **Expo/EAS + tiendas** (solo F4.6)                  | expo.dev · Apple Developer 99 USD/año · Google Play 25 USD único       | ⏳ Falta |
 
 ### 2.3 Valores que puedo generar yo
 
 - `JWT_SECRET` → `openssl rand -hex 32`
-- `PUBLIC_BASE_URL` y `CORS_ORIGIN` → el dominio elegido
-- `DATABASE_URL` → la URL **interna** que muestra Dokploy en tu servicio Postgres
+- `PUBLIC_BASE_URL` y `CORS_ORIGIN` → `https://fotoproy.apx5.com`
 
-**No me pegues secretos en el chat.** Se escriben en el panel de Dokploy o en
-`apps/api/.env` del servidor (permisos `600`, fuera de Git).
+**No me pegues secretos en el chat.** Se escriben en el panel de Dokploy
+(Environment) o en `apps/api/.env` del servidor (`chmod 600`, fuera de Git).
 
 ---
 
-## 3. Opción A — Dokploy (tu servidor, vía elegida)
+## 3. Despliegue en Dokploy (vía elegida)
 
 Dokploy construye la imagen desde el Dockerfile del repositorio y publica el
-contenedor detrás de **Traefik**, que resuelve el dominio y el certificado TLS
-de Let's Encrypt. No se usa `docker-compose.prod.yml` ni el contenedor de Caddy.
+contenedor detrás de **Traefik** (dominio + certificado TLS automáticos). No se
+usa `docker-compose.prod.yml` ni el contenedor de Caddy en esta vía.
 
-> El repositorio remoto es `git@github.com:auracore-sas/fotoproy.git` (rama
-> `main`). En esta máquina el remoto usa el alias SSH `github.com-auracore-sas`
-> porque la clave por defecto pertenece a otra cuenta.
+> Remoto: `git@github.com:auracore-sas/fotoproy.git`, rama `main`. En esta
+> máquina el remoto usa el alias SSH `github.com-auracore-sas` porque la clave
+> por defecto pertenece a otra cuenta de GitHub.
 
 ### 3.1 Crear la aplicación
 
 1. Dokploy → proyecto de FotoProy → **Create Application**.
 2. **Source**: Git. Conecta GitHub (Settings → Git → GitHub App) y elige
-   `auracore-sas/fotoproy`, rama **`main`**. Alternativa sin integración: pegar
-   la URL del repositorio y usar una **Deploy Key** con permiso de lectura.
+   `auracore-sas/fotoproy`, rama **`main`**. Sin integración: usar una
+   **Deploy Key** de solo lectura.
 3. **Build Type**: `Dockerfile` (ruta `Dockerfile`, contexto raíz).
 4. **Port**: `4100`.
 5. Activa el autodeploy si quieres que cada `git push` a `main` despliegue.
 
 ### 3.2 Variables de entorno
 
-En la pestaña **Environment** de la aplicación. Plantilla completa:
-`apps/api/.env.production.example`.
+Pestaña **Environment** de la aplicación. Plantilla: `apps/api/.env.production.example`.
 
 ```bash
 NODE_ENV=production
 PORT=4100
 
-# URL INTERNA del PostgreSQL que ya tienes en Dokploy
-# (servicio de base de datos → Connection URL / Internal)
-DATABASE_URL=postgresql://usuario:password@host-interno:5432/basededatos?schema=public
+# URL INTERNA del PostgreSQL de Dokploy (servicio → Internal Connection URL).
+# Usa base de datos y usuario dedicados: Prisma crea sus tablas en `public`.
+DATABASE_URL=postgresql://usuario:password@postgres-interno:5432/fotoproy?schema=public
 
 # openssl rand -hex 32
 JWT_SECRET=<secreto-de-64-hex>
 JWT_EXPIRES_IN=7d
 
-# Dominio público de la API (el mismo que pongas en la pestaña Domains)
-PUBLIC_BASE_URL=https://api.tudominio.com
-CORS_ORIGIN=https://api.tudominio.com
+PUBLIC_BASE_URL=https://fotoproy.apx5.com
+CORS_ORIGIN=https://fotoproy.apx5.com
 
-# Cloudflare R2
-STORAGE_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
-STORAGE_REGION=auto
-STORAGE_ACCESS_KEY_ID=<r2-access-key-id>
-STORAGE_SECRET_ACCESS_KEY=<r2-secret-access-key>
+# MinIO: interno para la API, público para firmar las URLs que usa el teléfono
+STORAGE_ENDPOINT=http://minio-interno:9000
+STORAGE_PUBLIC_ENDPOINT=https://minio.apx5.com
+STORAGE_REGION=us-east-1
+STORAGE_ACCESS_KEY_ID=<minio-access-key>
+STORAGE_SECRET_ACCESS_KEY=<minio-secret-key>
 STORAGE_BUCKET=fotoproy
-STORAGE_FORCE_PATH_STYLE=false
+STORAGE_FORCE_PATH_STYLE=true
 STORAGE_SIGNED_URL_TTL=3600
 STORAGE_GENERATE_THUMBS=true
 STORAGE_STAMP_PHOTOS=true
 
-# Aplica las migraciones Prisma al arrancar el contenedor (idempotente).
+# Aplica las migraciones Prisma al arrancar (idempotente)
 RUN_MIGRATIONS_ON_START=true
 ```
 
 Tras cambiar variables hay que **redesplegar**: Dokploy no las lee en caliente.
 
-### 3.3 Dominio
+### 3.3 MinIO (storage de las fotos)
 
-1. Crea el registro **A** `api.tudominio.com` → IP del servidor (espera la
-   propagación antes de seguir).
-2. Dokploy → aplicación → **Domains** → Add Domain: host `api.tudominio.com`,
-   puerto `4100`, HTTPS activado (Let's Encrypt).
-3. Dokploy añade las etiquetas de Traefik y conecta el contenedor a su red.
-   Configurar el dominio **antes** del primer despliegue evita el problema
-   típico de un contenedor que no alcanza la base de datos interna.
+- **Dos endpoints, un solo bucket.** La API habla con el MinIO por su URL
+  interna (rápido, sin salir del servidor). El teléfono, en cambio, recibe
+  **pre-signed URLs** que se firman contra `STORAGE_PUBLIC_ENDPOINT`: firma y
+  host deben coincidir, así que ese endpoint tiene que ser el dominio público.
+- **Dale un dominio al MinIO en Dokploy** (`minio.apx5.com`, HTTPS). Sin él, el
+  teléfono no puede subir ni ver fotos: `STORAGE_PUBLIC_ENDPOINT` apuntaría a un
+  host interno inalcanzable.
+- **Bucket**: la API lo crea solo al arrancar (`fotoproy`). Basta con que las
+  credenciales tengan permiso de escritura.
+- **CORS**: MinIO no implementa la API de CORS del bucket y no hace falta: las
+  apps nativas ignoran CORS y la web pública sirve los medios por el proxy de la
+  API (`/s/:token/media/...`), nunca directo contra MinIO.
+- **Endurecimiento recomendado**: en lugar del usuario root de MinIO, crear un
+  usuario dedicado con política sobre el bucket, y no publicar la consola del
+  MinIO más allá de lo necesario.
+- La consola web de MinIO **no** debe ser el mismo dominio que sirve los
+  objetos: usa el dominio de la API S3 (puerto 9000) para
+  `STORAGE_PUBLIC_ENDPOINT`.
 
-### 3.4 Desplegar
+### 3.4 Dominio de la API
 
-1. Pulsa **Deploy**. El arranque ejecuta `prisma migrate deploy` (por
-   `RUN_MIGRATIONS_ON_START=true`) y después la API.
-2. Los logs deben mostrar `[entrypoint] Migrations up to date.` y
+1. Registro **A** `fotoproy.apx5.com` → IP del servidor (espera la propagación).
+2. Dokploy → aplicación → **Domains** → Add Domain: host `fotoproy.apx5.com`,
+   puerto `4100`, HTTPS activado.
+3. Configurar el dominio **antes** del primer despliegue evita el problema
+   típico de un contenedor que no alcanza la base de datos interna (Dokploy
+   conecta el contenedor a su red de Traefik al añadir el dominio).
+
+### 3.5 Desplegar
+
+1. **Deploy**. El arranque ejecuta `prisma migrate deploy` y después la API.
+2. Los logs deben mostrar `[entrypoint] Migrations up to date.`,
+   `Signed URLs use https://minio.apx5.com ...` y
    `Nest application successfully started`.
 3. Cuando el esquema ya esté aplicado puedes poner
-   `RUN_MIGRATIONS_ON_START=false` para arrancar más rápido, pero entonces las
+   `RUN_MIGRATIONS_ON_START=false` para arrancar más rápido; entonces las
    migraciones hay que aplicarlas a mano en cada release (Dokploy → Terminal:
    `pnpm --filter @fotoproy/database db:deploy`).
 
-### 3.5 Verificar
+### 3.6 Verificar
 
-1. `curl https://api.tudominio.com/health` → `{"status":"ok","db":"up",...}`
-2. En la app: crear proyecto, subir una foto (debe ir a R2) y verla en la galería.
+1. `curl https://fotoproy.apx5.com/health` → `{"status":"ok","db":"up",...}`
+2. En la app: crear proyecto, subir una foto (debe ir a MinIO) y verla en la
+   galería.
 3. Crear un enlace compartido (_Compartir avance_) y abrirlo **desde datos
    móviles, fuera de la WiFi de la oficina**. Ese es el DoD de F2.4.
 
-Si el contenedor no alcanza la base de datos interna, revisa en este orden:
-dominio configurado (red de Traefik), host interno correcto en `DATABASE_URL` y
-que ambos servicios estén en el mismo proyecto de Dokploy.
+Diagnóstico rápido: si el contenedor no alcanza la base de datos interna,
+revisa en este orden (a) dominio configurado, (b) host interno correcto en
+`DATABASE_URL`, (c) ambos servicios en el mismo proyecto de Dokploy. Si las
+fotos no suben desde el teléfono, revisa `STORAGE_PUBLIC_ENDPOINT` y que el
+dominio del MinIO resuelva por HTTPS.
 
 ---
 
@@ -154,27 +185,18 @@ que ambos servicios estén en el mismo proyecto de Dokploy.
 Cuando el servidor no tiene Dokploy ni otro proxy. Es la vía que cubren
 `docker-compose.prod.yml`, `deploy/caddy/Caddyfile` y `scripts/deploy.sh`.
 
-### 4.1 Provisionar el servidor
-
 1. VPS con **Ubuntu 24.04 LTS**, mínimo **2 vCPU / 4 GB RAM / 40 GB SSD**
    (la imagen compila TypeScript y usa `sharp`; con 2 GB el build va justo).
-2. Docker Engine + Compose plugin.
-3. Usuario sin privilegios con SSH por clave **y `PermitRootLogin no`**.
-4. Firewall (`ufw`): permitir **22, 80, 443** y nada más.
-
-### 4.2 DNS y R2
-
-Registro **A** `api.tudominio.com` → IP del servidor. En R2: bucket nuevo
-(privado) y un token con _Object Read & Write_; la API aplica la CORS del bucket
-sola en el arranque.
-
-### 4.3 Primer despliegue
+2. Docker Engine + Compose plugin, usuario sin privilegios con SSH por clave,
+   `PermitRootLogin no` y `ufw` permitiendo solo **22, 80, 443**.
+3. Registro **A** `fotoproy.apx5.com` → IP del servidor.
+4. Desplegar:
 
 ```bash
 git clone git@github.com:auracore-sas/fotoproy.git fotoproy && cd fotoproy
 
 cat > .env <<'EOF'
-DOMAIN=api.tudominio.com
+DOMAIN=fotoproy.apx5.com
 ACME_EMAIL=tu-correo@dominio.com
 POSTGRES_PASSWORD=<contraseña larga>
 EOF
@@ -209,7 +231,7 @@ Se reutiliza el mismo `Dockerfile` y las mismas variables de la §3.2. Cambia:
 | Publicar una versión | `git push origin main` (autodeploy) o **Deploy** en Dokploy                                         |
 | Ver logs             | Dokploy → aplicación → Logs · o `docker compose -f docker-compose.prod.yml logs -f api`             |
 | Aplicar migraciones  | Automático con `RUN_MIGRATIONS_ON_START=true`; manual: `pnpm --filter @fotoproy/database db:deploy` |
-| Backup de la base    | Desde Dokploy (Backups del servicio de base de datos) o `pg_dump` del contenedor                    |
+| Backup de la base    | Desde Dokploy (Backups del servicio PostgreSQL) o `pg_dump` dentro del contenedor                   |
 | Rollback de código   | `git revert <commit> && git push` (o desplegar un tag anterior desde Dokploy)                       |
 
 Reglas:
@@ -244,7 +266,7 @@ restringido, contenedor sin privilegios.
 build nuevo, no basta con recargar.
 
 1. Publicar la API primero y verificar `/health` por HTTPS.
-2. `EXPO_PUBLIC_API_URL=https://api.tudominio.com eas build --profile production`
+2. `EXPO_PUBLIC_API_URL=https://fotoproy.apx5.com eas build --profile production`
 3. Subir la versión en `apps/mobile/app.json` y el build number.
 4. TestFlight (iOS) + Play Console Internal Testing (Android); `eas update` para
    los siguientes cambios de JavaScript.
@@ -256,23 +278,25 @@ de sincronización y los planos offline no dependen del despliegue.
 
 ## 9. Coste estimado
 
-| Pieza                         | Coste                                                       |
-| ----------------------------- | ----------------------------------------------------------- |
-| Servidor con Dokploy          | Ya en uso                                                   |
-| Dominio                       | ~10–15 USD/año                                              |
-| Cloudflare R2                 | 10 GB gratis; después ~0,015 USD/GB/mes + egreso (muy bajo) |
-| PostgreSQL                    | Ya en Dokploy                                               |
-| Apple Developer + Google Play | 99 USD/año + 25 USD único (solo para distribuir la app)     |
+| Pieza                         | Coste                                                   |
+| ----------------------------- | ------------------------------------------------------- |
+| Servidor con Dokploy          | Ya en uso                                               |
+| Dominio (`apx5.com`)          | Ya en uso                                               |
+| PostgreSQL + MinIO            | Ya en Dokploy                                           |
+| Apple Developer + Google Play | 99 USD/año + 25 USD único (solo para distribuir la app) |
 
 ---
 
 ## 10. Qué queda de F2.4
 
-- [x] Imagen Docker de la API (con migraciones opcionales al arrancar), Compose
-      de producción, Caddy con TLS, plantilla de variables, `scripts/deploy.sh`
-      y este runbook.
+- [x] Imagen Docker de la API (migraciones opcionales al arrancar), Compose de
+      producción, Caddy con TLS, plantilla de variables, `scripts/deploy.sh` y
+      este runbook.
 - [x] Repositorio remoto en GitHub (`auracore-sas/fotoproy`) con `main` y tags.
-- [ ] Dominio (subdominio + DNS) y bucket/token R2 reales.
-- [ ] Aplicación creada en Dokploy, variables cargadas y despliegue verificado:
-      `/health` público + enlace de solo lectura abierto desde fuera de la LAN.
+- [x] Soporte de **endpoint interno + público** de storage (MinIO de Dokploy).
+- [ ] Datos del MinIO (endpoint interno, claves, bucket) y URL interna del
+      PostgreSQL cargados en Dokploy.
+- [ ] Dominio del MinIO con HTTPS (`minio.apx5.com`) para que el teléfono suba.
+- [ ] Despliegue verificado: `/health` público + enlace de solo lectura abierto
+      desde fuera de la LAN, y subida de una foto desde el móvil.
 - [ ] CI de despliegue (opcional): hoy el release es `git push` + Deploy.

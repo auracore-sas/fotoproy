@@ -13,7 +13,15 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { Readable } from 'node:stream';
 
 export interface StorageConfig {
+  /** Endpoint used by the API itself (in Docker: the internal service URL). */
   endpoint: string;
+  /**
+   * Endpoint that clients (phones, browsers) can reach, used only to sign
+   * URLs. Empty means "same as `endpoint`". In Dokploy/Docker the internal
+   * host is not reachable from a phone, so this is normally the public
+   * MinIO/R2 domain.
+   */
+  publicEndpoint: string;
   region: string;
   accessKeyId: string;
   secretAccessKey: string;
@@ -34,11 +42,15 @@ export interface StorageConfig {
 export class StorageService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(StorageService.name);
   private client!: S3Client;
+  /** Signs URLs for clients; identical to `client` when no public endpoint. */
+  private signingClient!: S3Client;
   readonly config: StorageConfig;
 
   constructor(configService: ConfigService) {
+    const trim = (value: string): string => value.replace(/\/+$/, '');
     this.config = {
-      endpoint: configService.getOrThrow<string>('STORAGE_ENDPOINT'),
+      endpoint: trim(configService.getOrThrow<string>('STORAGE_ENDPOINT')),
+      publicEndpoint: trim(configService.get<string>('STORAGE_PUBLIC_ENDPOINT') ?? ''),
       region: configService.get<string>('STORAGE_REGION') ?? 'us-east-1',
       accessKeyId: configService.getOrThrow<string>('STORAGE_ACCESS_KEY_ID'),
       secretAccessKey: configService.getOrThrow<string>('STORAGE_SECRET_ACCESS_KEY'),
@@ -49,20 +61,37 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit(): Promise<void> {
-    this.client = new S3Client({
+    this.client = this.createClient(this.config.endpoint);
+    // A pre-signed URL is only valid for the host it was signed with, so URLs
+    // handed to the app must be signed against the endpoint the app can reach.
+    this.signingClient = this.config.publicEndpoint
+      ? this.createClient(this.config.publicEndpoint)
+      : this.client;
+    if (this.config.publicEndpoint && this.config.publicEndpoint !== this.config.endpoint) {
+      this.logger.log(
+        `Signed URLs use ${this.config.publicEndpoint} (data plane: ${this.config.endpoint})`,
+      );
+    }
+    return this.bootstrapBucket();
+  }
+
+  private createClient(endpoint: string): S3Client {
+    return new S3Client({
       region: this.config.region,
-      endpoint: this.config.endpoint,
+      endpoint,
       forcePathStyle: this.config.forcePathStyle,
       credentials: {
         accessKeyId: this.config.accessKeyId,
         secretAccessKey: this.config.secretAccessKey,
       },
     });
-    return this.bootstrapBucket();
   }
 
   onModuleDestroy(): void {
     this.client?.destroy();
+    if (this.signingClient !== this.client) {
+      this.signingClient?.destroy();
+    }
   }
 
   /** Creates the bucket when missing and applies a read CORS policy. */
@@ -110,7 +139,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
   /** Pre-signed HTTP PUT URL for the given object key. */
   async presignPut(key: string, expiresInSeconds?: number): Promise<string> {
     return getSignedUrl(
-      this.client,
+      this.signingClient,
       new PutObjectCommand({ Bucket: this.config.bucket, Key: key }),
       { expiresIn: expiresInSeconds ?? this.config.signedUrlTtl },
     );
@@ -119,7 +148,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
   /** Pre-signed HTTP GET URL for the given object key. */
   async presignGet(key: string, expiresInSeconds?: number): Promise<string> {
     return getSignedUrl(
-      this.client,
+      this.signingClient,
       new GetObjectCommand({ Bucket: this.config.bucket, Key: key }),
       { expiresIn: expiresInSeconds ?? this.config.signedUrlTtl },
     );
