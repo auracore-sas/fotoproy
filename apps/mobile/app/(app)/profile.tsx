@@ -1,7 +1,20 @@
 import { Stack, useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Button, CenterLoader, colors, ErrorBanner, Screen } from '../../components/ui';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Avatar,
+  Banner,
+  Button,
+  CenterLoader,
+  colors,
+  elevations,
+  ErrorBanner,
+  Field,
+  fonts,
+  radius,
+  Screen,
+  textStyles,
+} from '../../components/ui';
 import { errorMessage, useAuth } from '../../lib/auth';
 
 const MAX_SIGNATURE = 48;
@@ -41,58 +54,57 @@ export default function ProfileScreen() {
     }
   };
 
+  const roleLabel =
+    user.role === 'ADMIN' ? 'Administrador' : user.role === 'SUPERVISOR' ? 'Supervisor' : 'Técnico';
+
   return (
     <Screen>
       <Stack.Screen options={{ title: 'Perfil' }} />
-      <ScrollView contentContainerStyle={styles.padded} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <ErrorBanner message={error} />
 
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{(user.fullName || '?').charAt(0).toUpperCase()}</Text>
+        {/* Identity */}
+        <View style={styles.identity}>
+          <Avatar name={user.fullName} size={84} />
+          <Text style={styles.email}>{user.email}</Text>
+          <View style={styles.rolePill}>
+            <Text style={styles.roleText}>{roleLabel}</Text>
+            <Text style={styles.roleDot}>·</Text>
+            <Text style={styles.roleText}>{user.organizationName}</Text>
+          </View>
         </View>
-        <Text style={styles.email}>{user.email}</Text>
-        <Text style={styles.role}>
-          {user.role === 'ADMIN'
-            ? 'Administrador'
-            : user.role === 'SUPERVISOR'
-              ? 'Supervisor'
-              : 'Técnico'}{' '}
-          · {user.organizationName}
-        </Text>
 
-        <Text style={styles.label}>Nombre completo</Text>
-        <TextInput
-          value={fullName}
-          onChangeText={setFullName}
-          style={styles.input}
-          placeholder="Nombre y apellido"
-          placeholderTextColor={colors.textMuted}
-          maxLength={255}
-        />
-
-        <Text style={styles.label}>Firma profesional (se muestra en las fotos)</Text>
-        <TextInput
-          value={signature}
-          onChangeText={setSignature}
-          style={styles.input}
-          placeholder="Ej.: Arq. P. Valarezo · PVA · Patricio V."
-          placeholderTextColor={colors.textMuted}
-          maxLength={MAX_SIGNATURE}
-        />
-        <Text style={styles.hint}>
-          Texto corto (apodo, iniciales o nombre corto). Aparece en la estampa que se quema sobre
-          las fotos que captures. {signature.length}/{MAX_SIGNATURE}
-        </Text>
-
-        <View style={styles.previewBox}>
-          <Text style={styles.previewLabel}>Así se verá en la foto:</Text>
-          <Text style={styles.previewText}>
-            🏗️ PROY-01 · 2026-09-05 13:20 UTC{'\n'}📍 -0.177234, -78.489102 · 2834 m{'\n'}
-            ✒️ {signature.trim() || user.fullName}
+        <Text style={styles.sectionLabel}>Datos profesionales</Text>
+        <View style={styles.card}>
+          <Field
+            label="Nombre completo"
+            value={fullName}
+            onChangeText={setFullName}
+            placeholder="Nombre y apellido"
+            maxLength={255}
+          />
+          <Field
+            label={`Firma para la estampa (${signature.length}/${MAX_SIGNATURE})`}
+            value={signature}
+            onChangeText={setSignature}
+            placeholder="Ej.: Arq. P. Valarezo · PVA"
+            maxLength={MAX_SIGNATURE}
+          />
+          <Text style={styles.hint}>
+            Texto corto que aparece en la estampa quemada sobre cada foto que captures.
           </Text>
         </View>
 
-        {saved ? <Text style={styles.saved}>✓ Perfil actualizado</Text> : null}
+        {/* Stamp preview */}
+        <Text style={styles.sectionLabel}>Así se verá en la foto</Text>
+        <View style={styles.preview}>
+          <Text style={styles.previewMeta}>ESTAMPA · VISTA PREVIA</Text>
+          <Text style={styles.previewLine}>🏗️ PROY-01 · 2026-09-05 13:20 UTC</Text>
+          <Text style={styles.previewLine}>📍 -0.177234, -78.489102 · 2834 m</Text>
+          <Text style={styles.previewSignature}>✒️ {signature.trim() || user.fullName}</Text>
+        </View>
+
+        {saved ? <Banner tone="success" message="Perfil actualizado" /> : null}
 
         <Button
           title={saving ? 'Guardando…' : 'Guardar cambios'}
@@ -108,54 +120,55 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  padded: { padding: 20, paddingBottom: 40 },
-  avatar: {
-    alignSelf: 'center',
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.primary,
+  content: { padding: 20, paddingBottom: 44 },
+  identity: { alignItems: 'center', marginTop: 8, marginBottom: 24 },
+  email: { ...textStyles.heading, fontSize: 17, marginTop: 12 },
+  rolePill: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 6,
     marginTop: 8,
-  },
-  avatarText: { color: '#FFFFFF', fontSize: 30, fontWeight: '700' },
-  email: {
-    textAlign: 'center',
-    fontSize: 17,
-    fontWeight: '700',
-    color: colors.text,
-    marginTop: 12,
-  },
-  role: { textAlign: 'center', fontSize: 13, color: colors.textMuted, marginTop: 4 },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textMuted,
-    marginTop: 22,
-    marginBottom: 6,
-  },
-  input: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.primarySoft,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
+    borderColor: colors.primaryBorder,
+    borderRadius: radius.pill,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: colors.text,
+    paddingVertical: 5,
   },
-  hint: { fontSize: 12, color: colors.textMuted, marginTop: 6, lineHeight: 16 },
-  previewBox: {
-    marginTop: 24,
-    marginBottom: 20,
-    backgroundColor: '#111827',
-    borderRadius: 12,
-    padding: 14,
+  roleText: { fontFamily: fonts.sansSemiBold, fontSize: 12.5, color: colors.primaryDeep },
+  roleDot: { color: colors.primaryDeep, opacity: 0.6 },
+
+  sectionLabel: { ...textStyles.micro, marginBottom: 10 },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 16,
+    paddingBottom: 4,
+    marginBottom: 24,
+    ...elevations.card,
   },
-  previewLabel: { color: '#94A3B8', fontSize: 12, marginBottom: 8 },
-  previewText: { color: '#E2E8F0', fontSize: 13, lineHeight: 21 },
-  saved: { color: '#059669', fontSize: 14, fontWeight: '600', marginBottom: 12 },
+  hint: { ...textStyles.caption, fontSize: 12.5, marginTop: -6, marginBottom: 12 },
+
+  preview: {
+    backgroundColor: colors.ink,
+    borderRadius: radius.lg,
+    padding: 16,
+    marginBottom: 24,
+  },
+  previewMeta: {
+    ...textStyles.micro,
+    color: '#7C8AA8',
+    marginBottom: 10,
+  },
+  previewLine: { fontFamily: fonts.sansMedium, color: '#D7DEEC', fontSize: 13, lineHeight: 21 },
+  previewSignature: {
+    fontFamily: fonts.display,
+    color: colors.accent,
+    fontSize: 14,
+    lineHeight: 22,
+  },
   back: { alignItems: 'center', marginTop: 16 },
-  backText: { color: colors.textMuted, fontSize: 14, fontWeight: '600' },
+  backText: { fontFamily: fonts.sansSemiBold, color: colors.textMuted, fontSize: 14 },
 });

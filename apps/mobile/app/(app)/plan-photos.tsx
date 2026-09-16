@@ -2,7 +2,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import React, { useCallback, useEffect, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { CenterLoader, colors, EmptyState, ErrorState, Screen } from '../../components/ui';
+import { CenterLoader, colors, EmptyState, ErrorState, fonts, Screen } from '../../components/ui';
 import { SyncBar } from '../../components/sync-indicator';
 import { api } from '../../lib/api';
 import { errorMessage, useAuth } from '../../lib/auth';
@@ -56,7 +56,7 @@ export default function PlanPhotosScreen() {
         onPress={() =>
           router.push({ pathname: '/media-viewer', params: { remoteId: item.photoId } })
         }
-        style={({ pressed }) => [styles.tile, pressed && { opacity: 0.8 }]}
+        style={({ pressed }) => [styles.tile, pressed && { opacity: 0.85 }]}
       >
         {item.photo?.thumbnailUrl ? (
           <Image
@@ -79,7 +79,7 @@ export default function PlanPhotosScreen() {
         ) : null}
         <View style={styles.coords} pointerEvents="none">
           <Text style={styles.coordsText}>
-            📍 {item.xPercentage.toFixed(1)}%, {item.yPercentage.toFixed(1)}%
+            {item.xPercentage.toFixed(1)}% · {item.yPercentage.toFixed(1)}%
           </Text>
         </View>
       </Pressable>
@@ -105,7 +105,7 @@ export default function PlanPhotosScreen() {
   }
 
   return (
-    <Screen>
+    <Screen edges={['bottom']}>
       <Stack.Screen options={{ title: planTitle ? `Fotos · ${planTitle}` : 'Fotos del plano' }} />
       <View style={styles.bannerArea}>
         <SyncBar />
@@ -136,36 +136,42 @@ export default function PlanPhotosScreen() {
 }
 
 const styles = StyleSheet.create({
-  bannerArea: { paddingHorizontal: 10, paddingTop: 6 },
-  list: { padding: 4 },
+  bannerArea: { paddingHorizontal: 12, paddingTop: 8 },
+  list: { padding: 3, paddingTop: 8 },
   tile: {
     flex: 1 / 3,
     aspectRatio: 1,
-    margin: 2,
-    borderRadius: 8,
+    margin: 3,
+    borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: colors.border,
+    backgroundColor: colors.surfaceAlt,
   },
   tileImage: { width: '100%', height: '100%' },
-  tilePlaceholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#334155' },
-  glyph: { fontSize: 24, color: 'rgba(255,255,255,0.75)' },
+  tilePlaceholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.ink },
+  glyph: { fontSize: 24, color: 'rgba(255,255,255,0.78)' },
   duration: {
     position: 'absolute',
-    right: 4,
-    bottom: 4,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 4,
-    paddingHorizontal: 4,
+    right: 5,
+    bottom: 5,
+    backgroundColor: 'rgba(10,16,32,0.72)',
+    borderRadius: 7,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
   },
-  durationText: { color: '#FFFFFF', fontSize: 10, fontWeight: '600' },
+  durationText: {
+    color: '#FFFFFF',
+    fontSize: 10.5,
+    fontFamily: fonts.displayMedium,
+    letterSpacing: 0.3,
+  },
   coords: {
     position: 'absolute',
-    left: 4,
-    top: 4,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 4,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
+    left: 5,
+    top: 5,
+    backgroundColor: 'rgba(10,16,32,0.72)',
+    borderRadius: 7,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
   },
-  coordsText: { color: '#FDE68A', fontSize: 9, fontWeight: '700' },
+  coordsText: { color: colors.accent, fontSize: 9.5, fontFamily: fonts.displayMedium },
 });

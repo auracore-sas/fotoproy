@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
-import { Button, ErrorBanner, Field, Screen } from '../../components/ui';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text } from 'react-native';
+import { Button, ErrorBanner, Field, Screen, textStyles } from '../../components/ui';
 import { api } from '../../lib/api';
 import { errorMessage, useAuth } from '../../lib/auth';
 
@@ -45,6 +45,10 @@ export default function NewProjectScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <Text style={styles.intro}>
+            Crea un proyecto por obra. Dentro podrás subir planos, tomar fotos, anclar evidencias y
+            compartir el avance.
+          </Text>
           <ErrorBanner message={error} />
           <Field
             label="Código de obra *"
@@ -89,5 +93,6 @@ export default function NewProjectScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: 20 },
+  intro: { ...textStyles.subtitle, marginBottom: 20 },
   multiline: { height: 96, textAlignVertical: 'top', paddingTop: 12 },
 });

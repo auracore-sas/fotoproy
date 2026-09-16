@@ -1,6 +1,6 @@
 import { Redirect, Stack } from 'expo-router';
 import React from 'react';
-import { CenterLoader } from '../../components/ui';
+import { CenterLoader, colors } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 
 export default function AuthLayout() {
@@ -15,7 +15,7 @@ export default function AuthLayout() {
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#F8FAFC' },
+        contentStyle: { backgroundColor: colors.bg },
       }}
     />
   );

@@ -11,10 +11,14 @@ import {
   View,
 } from 'react-native';
 import {
+  Banner,
   Button,
   CenterLoader,
   colors,
-  ErrorBanner,
+  elevations,
+  FilterChip,
+  fonts,
+  radius,
   Screen,
   textStyles,
 } from '../../../components/ui';
@@ -176,12 +180,12 @@ export default function ShareLinksScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} />
           }
         >
-          <ErrorBanner
+          <Banner
+            tone="error"
             message={error}
             actionLabel={error ? 'Reintentar' : undefined}
             onAction={error ? () => void load() : undefined}
           />
-
           {freshLink?.url ? (
             <View style={styles.freshCard}>
               <Text style={styles.freshTitle}>Enlace creado</Text>
@@ -203,23 +207,12 @@ export default function ShareLinksScreen() {
             </Text>
             <View style={styles.chips}>
               {VALIDITY_OPTIONS.map((days) => (
-                <Pressable
+                <FilterChip
                   key={days}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: days === expiresInDays }}
+                  label={`${days} días`}
+                  active={days === expiresInDays}
                   onPress={() => setExpiresInDays(days)}
-                  style={({ pressed }) => [
-                    styles.chip,
-                    days === expiresInDays && styles.chipSelected,
-                    pressed && { opacity: 0.85 },
-                  ]}
-                >
-                  <Text
-                    style={[styles.chipText, days === expiresInDays && styles.chipTextSelected]}
-                  >
-                    {days} días
-                  </Text>
-                </Pressable>
+                />
               ))}
             </View>
             <Button title="Crear enlace" onPress={() => void createLink()} loading={creating} />
@@ -262,58 +255,67 @@ export default function ShareLinksScreen() {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 16, paddingBottom: 32, gap: 12 },
+  content: { padding: 16, paddingBottom: 40, gap: 14 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, padding: 24 },
-  hint: { color: colors.textMuted, fontSize: 13, lineHeight: 18 },
+  hint: { ...textStyles.caption, lineHeight: 19 },
+
   card: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 14,
-    gap: 10,
+    borderRadius: radius.lg,
+    padding: 16,
+    gap: 12,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.line,
+    ...elevations.card,
   },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+  cardTitle: { ...textStyles.heading, fontSize: 16 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  chipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
-  chipText: { color: colors.text, fontSize: 13, fontWeight: '600' },
-  chipTextSelected: { color: '#FFFFFF' },
+
   freshCard: {
-    backgroundColor: '#ECFDF5',
-    borderRadius: 12,
-    padding: 14,
+    backgroundColor: colors.successSoft,
+    borderRadius: radius.lg,
+    padding: 16,
     gap: 8,
     borderWidth: 1,
-    borderColor: '#A7F3D0',
+    borderColor: colors.successBorder,
   },
-  freshTitle: { fontSize: 15, fontWeight: '700', color: '#065F46' },
-  freshUrl: { color: '#065F46', fontSize: 13, fontFamily: 'monospace' },
-  freshHint: { color: '#047857', fontSize: 12, lineHeight: 17 },
+  freshTitle: { ...textStyles.heading, fontSize: 16, color: '#065F46' },
+  freshUrl: {
+    fontFamily: fonts.sansMedium,
+    color: '#065F46',
+    fontSize: 12.5,
+    backgroundColor: '#FFFFFF',
+    borderRadius: radius.sm,
+    padding: 10,
+  },
+  freshHint: {
+    fontFamily: fonts.sans,
+    color: '#047857',
+    fontSize: 12.5,
+    lineHeight: 18,
+  },
+
   linkRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: radius.lg,
+    padding: 14,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.line,
+    ...elevations.card,
   },
-  linkInfo: { flex: 1, gap: 2 },
-  status: { fontSize: 13, fontWeight: '700' },
-  linkMeta: { color: colors.textMuted, fontSize: 12 },
+  linkInfo: { flex: 1, gap: 3 },
+  status: { fontFamily: fonts.sansBold, fontSize: 13 },
+  linkMeta: { fontFamily: fonts.sansMedium, color: colors.textMuted, fontSize: 12 },
   revokeButton: {
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#FEE2E2',
+    borderRadius: radius.sm,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    backgroundColor: colors.dangerSoft,
+    borderWidth: 1,
+    borderColor: colors.dangerBorder,
   },
-  revokeText: { color: '#B91C1C', fontSize: 13, fontWeight: '700' },
+  revokeText: { fontFamily: fonts.sansBold, color: colors.danger, fontSize: 13 },
 });
