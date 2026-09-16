@@ -424,10 +424,36 @@ export const sharedPhotoSchema = z.object({
 });
 export type SharedPhoto = z.infer<typeof sharedPhotoSchema>;
 
+/** Anchor of a photo on a plan page (relative 0–100 %). */
+export const sharedPinSchema = z.object({
+  id: uuidSchema,
+  photoId: uuidSchema,
+  pageNumber: z.number().int(),
+  xPercentage: z.number(),
+  yPercentage: z.number(),
+});
+export type SharedPin = z.infer<typeof sharedPinSchema>;
+
+/** Plan exposed by a read-only link, with the photos anchored on it. */
+export const sharedPlanSchema = z.object({
+  id: uuidSchema,
+  title: z.string(),
+  planKind: z.enum(PLAN_KINDS),
+  pageCount: z.number().int(),
+  /** Short-lived signed URL to the plan file. */
+  url: z.string().url(),
+  thumbnailUrl: z.string().url().nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+  pins: z.array(sharedPinSchema),
+});
+export type SharedPlan = z.infer<typeof sharedPlanSchema>;
+
 export const sharedProjectPayloadSchema = z.object({
   project: sharedProjectSchema,
   expiresAt: z.string().datetime({ offset: true }),
   photos: z.array(sharedPhotoSchema),
+  /** Plans (maps/blueprints) with their anchors, for the public web view. */
+  plans: z.array(sharedPlanSchema),
 });
 export type SharedProjectPayload = z.infer<typeof sharedProjectPayloadSchema>;
 
