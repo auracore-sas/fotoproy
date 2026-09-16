@@ -40,21 +40,22 @@ de base de datos/almacenamiento del panel, no en la aplicación de la API).
 
 ### 2.1 Decisiones
 
-| #   | Decisión              | Estado                                                                         |
-| --- | --------------------- | ------------------------------------------------------------------------------ |
-| 1   | Dónde corre la API    | ✅ **Dokploy** en servidor propio (§3).                                        |
-| 2   | Dónde vive PostgreSQL | ✅ Servicio **PostgreSQL 16 ya existente** en Dokploy.                         |
-| 3   | Dónde vive el storage | ✅ Servicio **MinIO ya existente** en Dokploy.                                 |
-| 4   | Dominio y DNS         | ✅ **`fotoproy.apx5.com`** para la API. Falta decidir el subdominio del MinIO. |
+| #   | Decisión              | Estado                                                                                          |
+| --- | --------------------- | ----------------------------------------------------------------------------------------------- |
+| 1   | Dónde corre la API    | ✅ **Dokploy** en servidor propio (§3).                                                         |
+| 2   | Dónde vive PostgreSQL | ✅ Servicio **PostgreSQL 16 ya existente** en Dokploy.                                          |
+| 3   | Dónde vive el storage | ✅ **MinIO ya existente** en Dokploy: `minio_storage:9000` interno, datos en `/srv/minio/data`. |
+| 4   | Dominio de la API     | ✅ **`fotoproy.apx5.com`** (etiquetas de Traefik en el compose).                                |
+| 5   | Dominio del MinIO     | ✅ API S3 **`minio-api.apx5.com`** (puerto 9000); la consola vive en `minio.apx5.com` (9001).   |
 
 ### 2.2 Credenciales y accesos
 
-| #   | Qué                                                 | Cómo se obtiene                                                        | Estado   |
-| --- | --------------------------------------------------- | ---------------------------------------------------------------------- | -------- |
-| 5   | **MinIO**: endpoint interno, usuario/clave y bucket | Panel de Dokploy → servicio MinIO (credenciales y URL interna)         | ⏳ Falta |
-| 6   | **PostgreSQL**: URL interna                         | Panel de Dokploy → servicio PostgreSQL → _Internal Connection URL_     | ⏳ Falta |
-| 7   | **Dominio del MinIO** (p. ej. `minio.apx5.com`)     | Dokploy → MinIO → Domains (HTTPS). Necesario para que el teléfono suba | ⏳ Falta |
-| 8   | **Expo/EAS + tiendas** (solo F4.6)                  | expo.dev · Apple Developer 99 USD/año · Google Play 25 USD único       | ⏳ Falta |
+| #   | Qué                                | Cómo se obtiene                                                                           | Estado   |
+| --- | ---------------------------------- | ----------------------------------------------------------------------------------------- | -------- |
+| 7   | **MinIO**: Access Key / Secret Key | Consola `minio.apx5.com` → Identity → Users (o `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`) | ⏳ Falta |
+| 8   | **PostgreSQL**: URL interna        | Panel de Dokploy → servicio PostgreSQL → _Internal Connection URL_                        | ⏳ Falta |
+| 9   | **JWT_SECRET**                     | `openssl rand -hex 32` (lo genero yo)                                                     | ⏳ Falta |
+| 10  | **Expo/EAS + tiendas** (solo F4.6) | expo.dev · Apple Developer 99 USD/año · Google Play 25 USD único                          | ⏳ Falta |
 
 ### 2.3 Valores que puedo generar yo
 
@@ -68,27 +69,33 @@ de base de datos/almacenamiento del panel, no en la aplicación de la API).
 
 ## 3. Despliegue en Dokploy (vía elegida)
 
-Dokploy construye la imagen desde el Dockerfile del repositorio y publica el
-contenedor detrás de **Traefik** (dominio + certificado TLS automáticos). No se
-usa `docker-compose.prod.yml` ni el contenedor de Caddy en esta vía.
+Dokploy construye la imagen desde el `Dockerfile` del repositorio y publica el
+contenedor detrás de **Traefik**. Tu MinIO y tu PostgreSQL **ya viven en
+`dokploy-network`**, así que la API se despliega como **Compose application**
+con `docker-compose.dokploy.yml`: ese archivo declara la red como `external` y
+mete la API en la misma red, de modo que `minio_storage` y el host del
+PostgreSQL resuelven. Un despliegue de tipo _Application_ (solo Dockerfile)
+crea su propia red aislada y no alcanza esos servicios.
 
 > Remoto: `git@github.com:auracore-sas/fotoproy.git`, rama `main`. En esta
 > máquina el remoto usa el alias SSH `github.com-auracore-sas` porque la clave
 > por defecto pertenece a otra cuenta de GitHub.
 
-### 3.1 Crear la aplicación
+### 3.1 Crear la Compose application
 
-1. Dokploy → proyecto de FotoProy → **Create Application**.
-2. **Source**: Git. Conecta GitHub (Settings → Git → GitHub App) y elige
-   `auracore-sas/fotoproy`, rama **`main`**. Sin integración: usar una
-   **Deploy Key** de solo lectura.
-3. **Build Type**: `Dockerfile` (ruta `Dockerfile`, contexto raíz).
-4. **Port**: `4100`.
+1. Dokploy → proyecto de FotoProy → **Create Compose**.
+2. **Provider**: Git (o GitHub App) → `auracore-sas/fotoproy`, rama **`main`**.
+3. **Compose Path**: `./docker-compose.dokploy.yml`.
+4. **No** añadas un dominio en la pestaña _Domains_: el compose ya trae las
+   etiquetas de Traefik para `fotoproy.apx5.com`, igual que tu stack de MinIO.
+   (Si prefieres usar la UI, borra las etiquetas `traefik.*` del compose y añade
+   el dominio con puerto `4100`.)
 5. Activa el autodeploy si quieres que cada `git push` a `main` despliegue.
 
 ### 3.2 Variables de entorno
 
-Pestaña **Environment** de la aplicación. Plantilla: `apps/api/.env.production.example`.
+Pestaña **Environment** de la Compose application. Plantilla:
+`apps/api/.env.production.example`.
 
 ```bash
 NODE_ENV=production
@@ -105,9 +112,9 @@ JWT_EXPIRES_IN=7d
 PUBLIC_BASE_URL=https://fotoproy.apx5.com
 CORS_ORIGIN=https://fotoproy.apx5.com
 
-# MinIO: interno para la API, público para firmar las URLs que usa el teléfono
-STORAGE_ENDPOINT=http://minio-interno:9000
-STORAGE_PUBLIC_ENDPOINT=https://minio.apx5.com
+# MinIO: interno para la API, público (API S3) para firmar las URLs del teléfono
+STORAGE_ENDPOINT=http://minio_storage:9000
+STORAGE_PUBLIC_ENDPOINT=https://minio-api.apx5.com
 STORAGE_REGION=us-east-1
 STORAGE_ACCESS_KEY_ID=<minio-access-key>
 STORAGE_SECRET_ACCESS_KEY=<minio-secret-key>
@@ -123,45 +130,76 @@ RUN_MIGRATIONS_ON_START=true
 
 Tras cambiar variables hay que **redesplegar**: Dokploy no las lee en caliente.
 
-### 3.3 MinIO (storage de las fotos)
+### 3.3 MinIO (el stack que ya tienes)
 
-- **Dos endpoints, un solo bucket.** La API habla con el MinIO por su URL
-  interna (rápido, sin salir del servidor). El teléfono, en cambio, recibe
-  **pre-signed URLs** que se firman contra `STORAGE_PUBLIC_ENDPOINT`: firma y
-  host deben coincidir, así que ese endpoint tiene que ser el dominio público.
-- **Dale un dominio al MinIO en Dokploy** (`minio.apx5.com`, HTTPS). Sin él, el
-  teléfono no puede subir ni ver fotos: `STORAGE_PUBLIC_ENDPOINT` apuntaría a un
-  host interno inalcanzable.
-- **Bucket**: la API lo crea solo al arrancar (`fotoproy`). Basta con que las
-  credenciales tengan permiso de escritura.
-- **CORS**: MinIO no implementa la API de CORS del bucket y no hace falta: las
-  apps nativas ignoran CORS y la web pública sirve los medios por el proxy de la
-  API (`/s/:token/media/...`), nunca directo contra MinIO.
-- **Endurecimiento recomendado**: en lugar del usuario root de MinIO, crear un
-  usuario dedicado con política sobre el bucket, y no publicar la consola del
-  MinIO más allá de lo necesario.
-- La consola web de MinIO **no** debe ser el mismo dominio que sirve los
-  objetos: usa el dominio de la API S3 (puerto 9000) para
-  `STORAGE_PUBLIC_ENDPOINT`.
+Tu compose de MinIO publica dos hosts de Traefik: la **consola** en
+`minio.apx5.com` (puerto 9001) y el **API S3** en `minio-api.apx5.com` (puerto
+9000), y el contenedor responde en `dokploy-network` como `minio_storage`
+(también `minio`). Eso se traduce en:
 
-### 3.4 Dominio de la API
+| Rol                 | Valor                                                | Por qué                                                                                                                                  |
+| ------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| API → MinIO         | `STORAGE_ENDPOINT=http://minio_storage:9000`         | Tráfico interno por la red de Docker, sin salir a Internet.                                                                              |
+| Teléfono → MinIO    | `STORAGE_PUBLIC_ENDPOINT=https://minio-api.apx5.com` | El **API S3**, no la consola: una pre-signed URL solo vale para el host con el que se firmó y este es el que el teléfono puede alcanzar. |
+| Consola (navegador) | `https://minio.apx5.com`                             | Solo para administrar el MinIO; no se usa en la configuración de la API.                                                                 |
 
-1. Registro **A** `fotoproy.apx5.com` → IP del servidor (espera la propagación).
-2. Dokploy → aplicación → **Domains** → Add Domain: host `fotoproy.apx5.com`,
-   puerto `4100`, HTTPS activado.
-3. Configurar el dominio **antes** del primer despliegue evita el problema
-   típico de un contenedor que no alcanza la base de datos interna (Dokploy
-   conecta el contenedor a su red de Traefik al añadir el dominio).
+- **Bucket**: `fotoproy`. La API lo crea al arrancar si las credenciales pueden
+  crear buckets (el usuario root sí). Con un usuario dedicado, créalo antes en
+  la consola.
+- **Credenciales**: lo rápido es usar `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`.
+  Lo recomendable es un usuario dedicado con una política limitada a ese bucket
+  (consola → Identity → Policies → Create → Users → Attach):
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": ["s3:GetBucketLocation", "s3:ListBucket", "s3:ListBucketMultipartUploads"],
+        "Resource": ["arn:aws:s3:::fotoproy"]
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:AbortMultipartUpload",
+          "s3:ListMultipartUploadParts"
+        ],
+        "Resource": ["arn:aws:s3:::fotoproy/*"]
+      }
+    ]
+  }
+  ```
+- **Path style**: MinIO exige `STORAGE_FORCE_PATH_STYLE=true`, así que las URLs
+  firmadas tienen la forma `https://minio-api.apx5.com/fotoproy/photos/...`.
+- **CORS**: MinIO no implementa la API de CORS del bucket (la API lo registra
+  como _debug_ y sigue). No hace falta: las apps nativas ignoran CORS y la web
+  pública sirve los medios por el proxy de la API (`/s/:token/media/...`).
+- **Datos**: tu volumen ya está en `/srv/minio/data`; la API no necesita
+  ningún volumen propio (es stateless).
+- Si el teléfono no puede subir, revisa en este orden: (1)
+  `STORAGE_PUBLIC_ENDPOINT` apunta al API S3 y no a la consola, (2) el DNS de
+  `minio-api.apx5.com` resuelve y responde por HTTPS, (3) la URL firmada abre
+  en un navegador con `curl -I`.
+
+### 3.4 PostgreSQL
+
+Usa la **Internal Connection URL** del servicio de Dokploy (mismo
+`dokploy-network`). Crea una base de datos dedicada (`fotoproy`) con su usuario:
+Prisma crea sus tablas en el esquema `public` y no conviene compartirlas con
+otra aplicación. Las migraciones las aplica el contenedor al arrancar.
 
 ### 3.5 Desplegar
 
 1. **Deploy**. El arranque ejecuta `prisma migrate deploy` y después la API.
-2. Los logs deben mostrar `[entrypoint] Migrations up to date.`,
-   `Signed URLs use https://minio.apx5.com ...` y
+2. En los logs deben aparecer `[entrypoint] Migrations up to date.`,
+   `Signed URLs use https://minio-api.apx5.com ...` y
    `Nest application successfully started`.
 3. Cuando el esquema ya esté aplicado puedes poner
    `RUN_MIGRATIONS_ON_START=false` para arrancar más rápido; entonces las
-   migraciones hay que aplicarlas a mano en cada release (Dokploy → Terminal:
+   migraciones hay que aplicarlas a mano en cada release (Terminal de Dokploy:
    `pnpm --filter @fotoproy/database db:deploy`).
 
 ### 3.6 Verificar
@@ -172,11 +210,9 @@ Tras cambiar variables hay que **redesplegar**: Dokploy no las lee en caliente.
 3. Crear un enlace compartido (_Compartir avance_) y abrirlo **desde datos
    móviles, fuera de la WiFi de la oficina**. Ese es el DoD de F2.4.
 
-Diagnóstico rápido: si el contenedor no alcanza la base de datos interna,
-revisa en este orden (a) dominio configurado, (b) host interno correcto en
-`DATABASE_URL`, (c) ambos servicios en el mismo proyecto de Dokploy. Si las
-fotos no suben desde el teléfono, revisa `STORAGE_PUBLIC_ENDPOINT` y que el
-dominio del MinIO resuelva por HTTPS.
+Diagnóstico rápido: si la API no arranca o no conecta, revisa (a) que el
+container esté en `dokploy-network` (el compose lo declara), (b) la URL interna
+de PostgreSQL, (c) los logs de `docker logs fotoproy-api`.
 
 ---
 
@@ -294,9 +330,11 @@ de sincronización y los planos offline no dependen del despliegue.
       este runbook.
 - [x] Repositorio remoto en GitHub (`auracore-sas/fotoproy`) con `main` y tags.
 - [x] Soporte de **endpoint interno + público** de storage (MinIO de Dokploy).
-- [ ] Datos del MinIO (endpoint interno, claves, bucket) y URL interna del
-      PostgreSQL cargados en Dokploy.
-- [ ] Dominio del MinIO con HTTPS (`minio.apx5.com`) para que el teléfono suba.
+- [x] MinIO identificado: `minio_storage:9000` interno y API S3 público en
+      `minio-api.apx5.com`; `docker-compose.dokploy.yml` para la Compose
+      application.
+- [ ] Claves de MinIO (o usuario dedicado) y URL interna del PostgreSQL
+      cargadas en Dokploy.
 - [ ] Despliegue verificado: `/health` público + enlace de solo lectura abierto
       desde fuera de la LAN, y subida de una foto desde el móvil.
 - [ ] CI de despliegue (opcional): hoy el release es `git push` + Deploy.

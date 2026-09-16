@@ -1,0 +1,59 @@
+# FotoProy API — Dokploy deployment (Compose application).
+#
+# Why a Compose application instead of an "Application" (Dockerfile) entry:
+# in Dokploy, databases and Compose services live on `dokploy-network`, while a
+# Compose deployment creates its own isolated network by default. Declaring
+# `dokploy-network` as external puts this container on the same network as the
+# existing MinIO and PostgreSQL, so the internal hostnames resolve.
+#
+# Usage (Dokploy → project → Create Compose):
+#   1. Provider: Git (or GitHub App) → repository auracore-sas/fotoproy, branch main.
+#   2. Compose Path: ./docker-compose.dokploy.yml
+#   3. Environment: add the variables listed in docs/deployment.md §3.2.
+#   4. Do NOT add a Domain in the Dokploy UI: the Traefik labels below already
+#      route fotoproy.apx5.com to this container (same style as the MinIO stack).
+#
+# The image is built from the repository Dockerfile; migrations run inside the
+# container on start when RUN_MIGRATIONS_ON_START=true.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fotoproy-api:latest
+    container_name: fotoproy-api
+    restart: always
+    # The data plane uses the internal MinIO host; pre-signed URLs are signed
+    # against STORAGE_PUBLIC_ENDPOINT (see docs/deployment.md §3.3).
+    environment:
+      NODE_ENV: production
+      PORT: '4100'
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT}
+      STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT}
+      STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
+      STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID}
+      STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-fotoproy}
+      STORAGE_FORCE_PATH_STYLE: ${STORAGE_FORCE_PATH_STYLE:-true}
+      STORAGE_SIGNED_URL_TTL: ${STORAGE_SIGNED_URL_TTL:-3600}
+      STORAGE_GENERATE_THUMBS: ${STORAGE_GENERATE_THUMBS:-true}
+      STORAGE_STAMP_PHOTOS: ${STORAGE_STAMP_PHOTOS:-true}
+      RUN_MIGRATIONS_ON_START: ${RUN_MIGRATIONS_ON_START:-true}
+    networks:
+      - dokploy-network
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.fotoproy-api.rule=Host(`fotoproy.apx5.com`)'
+      - 'traefik.http.routers.fotoproy-api.entrypoints=websecure'
+      - 'traefik.http.routers.fotoproy-api.tls.certresolver=letsencrypt'
+      - 'traefik.http.services.fotoproy-api.loadbalancer.server.port=4100'
+
+networks:
+  dokploy-network:
+    external: true

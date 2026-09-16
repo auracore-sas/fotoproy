@@ -115,7 +115,7 @@ pnpm db:down              # detener BD docker
 
 ### Producción (F2.4)
 
-Vía elegida: **Dokploy** en servidor propio (opción A del runbook: construye el `Dockerfile`, Traefik resuelve dominio + TLS, PostgreSQL existente del panel y migraciones con `RUN_MIGRATIONS_ON_START=true`). Los comandos con Compose son para un VPS desnudo sin Dokploy.
+Vía elegida: **Dokploy** en servidor propio. La API se despliega como **Compose application** con [`docker-compose.dokploy.yml`](docker-compose.dokploy.yml) (construye el `Dockerfile`, declara `dokploy-network` como red externa para alcanzar MinIO/PostgreSQL y trae las etiquetas de Traefik para `fotoproy.apx5.com`; migraciones con `RUN_MIGRATIONS_ON_START=true`). Una _Application_ de Dokploy crea su propia red y no alcanza los servicios internos. Los comandos con Compose son para un VPS desnudo sin Dokploy.
 
 ```bash
 bash scripts/deploy.sh              # VPS desnudo: build + migraciones + arranque + health check
