@@ -96,17 +96,22 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
 
   /** Creates the bucket when missing and applies a read CORS policy. */
   private async bootstrapBucket(): Promise<void> {
-    const { bucket } = this.config;
+    const { bucket, endpoint } = this.config;
     try {
       await this.client.send(new HeadBucketCommand({ Bucket: bucket }));
+      this.logger.log(`Bucket "${bucket}" ready at ${endpoint}`);
     } catch {
       try {
         await this.client.send(new CreateBucketCommand({ Bucket: bucket }));
-        this.logger.log(`Bucket "${bucket}" created`);
+        this.logger.log(`Bucket "${bucket}" created at ${endpoint}`);
       } catch (error) {
-        // Concurrent creation / provider quirks are tolerated; later calls
-        // will surface real permission problems.
-        this.logger.warn(`Bucket "${bucket}" may already exist: ${(error as Error).message}`);
+        // Loud on purpose: if this fails, the API still signs URLs but every
+        // server-side operation (thumbnails, share media proxy) will fail.
+        // /health reports it too, so a misconfigured STORAGE_ENDPOINT is
+        // visible from outside instead of hiding in the logs.
+        this.logger.error(
+          `Cannot create bucket "${bucket}" at ${endpoint}: ${(error as Error).message}`,
+        );
       }
     }
 
@@ -133,6 +138,30 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
       this.logger.debug(
         `Bucket CORS not applied to "${bucket}" (expected on MinIO): ${(error as Error).message}`,
       );
+    }
+  }
+
+  /**
+   * Reachability of the data plane, reported by `GET /health`:
+   * - `up`      the API can talk to the bucket from this container;
+   * - `missing` reachable, but the bucket does not exist yet;
+   * - `down`    cannot reach the endpoint (wrong host, network or credentials).
+   */
+  async checkBucket(): Promise<'up' | 'missing' | 'down'> {
+    try {
+      await this.client.send(new HeadBucketCommand({ Bucket: this.config.bucket }));
+      return 'up';
+    } catch (error) {
+      const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata
+        ?.httpStatusCode;
+      const name = (error as { name?: string }).name;
+      if (status === 404 || name === 'NotFound' || name === 'NoSuchBucket') {
+        return 'missing';
+      }
+      this.logger.warn(
+        `Storage check failed at ${this.config.endpoint}: ${(error as Error).message}`,
+      );
+      return 'down';
     }
   }
 

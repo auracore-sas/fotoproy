@@ -184,6 +184,19 @@ Tu compose de MinIO publica dos hosts de Traefik: la **consola** en
   `minio-api.apx5.com` resuelve y responde por HTTPS, (3) la URL firmada abre
   en un navegador con `curl -I`.
 
+#### Cloudflare delante del API S3
+
+`minio-api.apx5.com` está **proxied** por Cloudflare (nube naranja). Verificado:
+un GET firmado responde 200 y el mismo objeto **sin firma devuelve 403
+AccessDenied**, así que Cloudflare no sirve los objetos privados desde caché.
+Pero el plan gratuito limita la **subida a 100 MB**: los vídeos de más de ese
+tamaño fallarán con 413 aunque el límite de la app sea 3 minutos. Opciones:
+
+1. Poner ese host en **DNS only** (nube gris): las subidas van directas al
+   servidor y desaparece el límite. Es lo recomendado para un API S3.
+2. Mantener el proxy y asumir el tope de 100 MB por archivo (limitar la
+   duración/bitrate del vídeo en la app).
+
 ### 3.4 PostgreSQL
 
 Usa la **Internal Connection URL** del servicio de Dokploy (mismo
@@ -204,7 +217,12 @@ otra aplicación. Las migraciones las aplica el contenedor al arrancar.
 
 ### 3.6 Verificar
 
-1. `curl https://fotoproy.apx5.com/health` → `{"status":"ok","db":"up",...}`
+1. `curl https://fotoproy.apx5.com/health` → `{"status":"ok","db":"up","storage":"up",...}`.
+   El campo `storage` dice si la API alcanza el bucket desde dentro del
+   contenedor: `up` (todo bien) · `missing` (alcanza, pero el bucket no existe
+   todavía) · `down` (no alcanza `STORAGE_ENDPOINT`). **Solo la base de datos
+   hace fallar el endpoint** a propósito: un storage caído no se arregla
+   reiniciando el contenedor.
 2. En la app: crear proyecto, subir una foto (debe ir a MinIO) y verla en la
    galería.
 3. Crear un enlace compartido (_Compartir avance_) y abrirlo **desde datos
@@ -213,6 +231,13 @@ otra aplicación. Las migraciones las aplica el contenedor al arrancar.
 Diagnóstico rápido: si la API no arranca o no conecta, revisa (a) que el
 container esté en `dokploy-network` (el compose lo declara), (b) la URL interna
 de PostgreSQL, (c) los logs de `docker logs fotoproy-api`.
+
+Si `/health` devuelve `storage: "down"`, el contenedor no resuelve el host
+interno del MinIO: revisa que el compose de la API y el de MinIO compartan
+`dokploy-network` y, como respaldo inmediato, apunta `STORAGE_ENDPOINT` al
+endpoint **público** (`https://minio-api.apx5.com`): funciona igual porque sale
+por Traefik y solo cuesta un salto de red extra. El log de arranque ya lo dice
+con el nombre del host (`Cannot create bucket "fotoproy" at http://…`).
 
 ---
 
@@ -293,6 +318,12 @@ restringido, contenedor sin privilegios.
 - [ ] Límite de tamaño de subida y validación estricta zod en todos los endpoints.
 - [ ] Borrado de metadatos EXIF en el original antes de publicar.
 - [ ] Revisión de secretos (que ningún `.env` haya entrado a Git).
+- [ ] **Rotar los secretos que se compartieron en texto plano** (contraseña de
+      PostgreSQL, `JWT_SECRET` y credenciales de MinIO).
+- [ ] **Usuario dedicado de MinIO** en lugar del root (`admin`): el usuario root
+      da acceso a **todos** los buckets del servidor, incluidos los de otros
+      proyectos (`plane-uploads`, `aurafac`, `nocodb`…). Política con alcance
+      solo a `fotoproy` en §3.3.
 
 ---
 
@@ -333,8 +364,12 @@ de sincronización y los planos offline no dependen del despliegue.
 - [x] MinIO identificado: `minio_storage:9000` interno y API S3 público en
       `minio-api.apx5.com`; `docker-compose.dokploy.yml` para la Compose
       application.
-- [ ] Claves de MinIO (o usuario dedicado) y URL interna del PostgreSQL
-      cargadas en Dokploy.
-- [ ] Despliegue verificado: `/health` público + enlace de solo lectura abierto
-      desde fuera de la LAN, y subida de una foto desde el móvil.
+- [x] Claves de MinIO y URL interna del PostgreSQL cargadas en Dokploy: el
+      contenedor conecta a la base (`db: up`) y firma/recibe objetos en
+      `minio-api.apx5.com`. Pendiente de mejora: usuario dedicado de MinIO en
+      lugar del root.
+- [~] Despliegue verificado: `https://fotoproy.apx5.com/health` responde `ok`
+  con `db: up`, el bucket `fotoproy` existe y el camino firmado
+  (PUT/GET) responde 200. Falta confirmar `storage: up` tras redesplegar
+  (la API debe alcanzar `minio_storage:9000`) y la subida desde el teléfono.
 - [ ] CI de despliegue (opcional): hoy el release es `git push` + Deploy.
