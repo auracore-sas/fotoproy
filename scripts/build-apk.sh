@@ -41,6 +41,13 @@ MAX_WORKERS="${MAX_WORKERS:-2}"
 GRADLE_HEAP="${GRADLE_HEAP:-2g}"
 KOTLIN_HEAP="${KOTLIN_HEAP:-1g}"
 MIN_FREE_GB="${MIN_FREE_GB:-4}"
+# Hard caps so a bad estimate cannot freeze the desktop (see docs/release.md §6).
+#   CPUS          CPUs the build may use (taskset); empty disables the pin.
+#   MEMORY_MAX    cgroup memory ceiling; the build dies, not your session.
+CPUS="${CPUS:-0-2}"
+MEMORY_MAX="${MEMORY_MAX:-6G}"
+MEMORY_SWAP_MAX="${MEMORY_SWAP_MAX:-1G}"
+SANDBOX="${SANDBOX:-1}"
 # The API URL is baked into the JS bundle. For a client APK it must be the public
 # one, not the LAN address that apps/mobile/.env holds for local development.
 API_URL="${API_URL:-https://fotoproy.apx5.com}"
@@ -97,8 +104,21 @@ LOG="$OUT_DIR/build-$(date +%Y%m%d-%H%M%S).log"
 echo "  log:         $LOG"
 echo "  this takes 10-25 min on the first run (C++ codegen); do not close the terminal"
 
+# Resource ceilings: own cgroup for memory (verified: memory.max + swap.max) and
+# a fixed CPU set via taskset, plus low priority so interactive work wins.
+LAUNCHER=()
+if [ "$SANDBOX" = "1" ] && systemd-run --user --scope true >/dev/null 2>&1; then
+  LAUNCHER=(systemd-run --user --scope -p "MemoryMax=$MEMORY_MAX" -p "MemorySwapMax=$MEMORY_SWAP_MAX" --)
+  echo "  caps:        memory $MEMORY_MAX (swap $MEMORY_SWAP_MAX) · CPUs ${CPUS:-all} · nice 10"
+fi
+PIN=()
+if [ -n "$CPUS" ] && command -v taskset >/dev/null 2>&1; then
+  PIN=(taskset -c "$CPUS")
+fi
+
 set +e
-(cd "$ANDROID_DIR" && ./gradlew :app:assembleRelease $DAEMON_FLAG --console=plain \
+(cd "$ANDROID_DIR" && "${LAUNCHER[@]}" "${PIN[@]}" nice -n 10 ionice -c2 -n7 \
+  ./gradlew :app:assembleRelease $DAEMON_FLAG --console=plain \
   --max-workers="$MAX_WORKERS" \
   "-PreactNativeArchitectures=$ABIS" \
   "-Dorg.gradle.jvmargs=-Xmx$GRADLE_HEAP -XX:MaxMetaspaceSize=512m" \

@@ -132,10 +132,33 @@ Qué necesita (ya instalado en esta máquina, todo en carpetas de usuario, sin `
 | CMake       | `~/Android/Sdk/cmake/3.22.1`      | —                                                              |
 | Cachés      | `~/.gradle` (≈3,6 GB)             | Ya descargadas: los siguientes builds son mucho más rápidos.   |
 
-> ⚠️ **Memoria**: el primer intento compilando **4 ABIs en paralelo** con un heap
-> de Gradle de 3 GB dejó el equipo sin respuesta (≈5 GB libres, swap de 2 GB). El
-> script limita a **una ABI**, **2 workers**, heap de **2 GB** y aborta si hay
-> menos de 4 GB disponibles. Cierra Chrome/IDE antes de compilar.
+> ⚠️ **Por qué se colgó el primer intento**: no fue la CPU. Gradle por defecto
+> lanza tantos workers como hilos tenga la máquina (**8** en este portátil) y
+> CMake/Ninja compilan C++ en paralelo **por ABI**; yo lancé **4 ABIs** con un heap
+> de Gradle de **3 GB** más el daemon de Kotlin, con solo ~5 GB libres y 2 GB de
+> swap. El kernel empujó todo a swap, saturó el disco y la sesión dejó de
+> responder. `kern.log` no registra ningún OOM-killer: no hubo un proceso
+> sacrificado, hubo _thrashing_, que para la usabilidad es peor.
+
+El script limita por defecto a **una ABI**, **2 workers**, heap **2 GB**,
+`--no-daemon`, y añade **techos duros** verificados:
+
+| Tope          | Cómo                                                        | Valor por defecto  |
+| ------------- | ----------------------------------------------------------- | ------------------ |
+| CPU           | `taskset -c 0-2` (la CPU siempre conserva 5 hilos libres)   | 3 hilos            |
+| Memoria       | cgroup propio vía `systemd-run --user --scope -p MemoryMax` | 6 GB (swap 1 GB)   |
+| Prioridad     | `nice -n 10` + `ionice -c2 -n7`                             | el escritorio gana |
+| Paralelismo   | `--max-workers=2`                                           | 2 tareas           |
+| Memoria libre | aborta antes de empezar si hay < 4 GB                       | —                  |
+
+> Nota: en la sesión de usuario de este equipo el controlador de CPU **no está
+> delegado** (`CPUQuota` se ignora), por eso el tope de CPU se aplica con
+> `taskset`, que sí funciona. La memoria sí se limita por cgroup. Si el build se
+> pasa de memoria, muere **dentro de su cgroup**: se pierde el build, no la
+> sesión.
+
+Ajustes: `CPUS=0-3`, `MEMORY_MAX=8G`, `MAX_WORKERS=4` (más rápido y más pesado) o
+`ABIS=arm64-v8a MAX_WORKERS=1` (lo más ligero). `SANDBOX=0` quita los cgroup.
 
 Verificaciones que hace el script al terminar: `aapt2 dump badging` (paquete,
 `versionCode`, SDKs), `apksigner` (firma) y **comprobación de que
