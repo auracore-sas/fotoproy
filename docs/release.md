@@ -179,6 +179,25 @@ error en lugar de entregar un APK inservible). Además `apps/mobile/lib/api.ts`
 usa un valor por defecto distinto según el entorno: la LAN en desarrollo, el
 dominio público en release.
 
+### Arquitecturas: por qué arm64 **y** armeabi-v7a
+
+Muchos teléfonos económicos traen **Android de 32 bits** aunque el chip sea de 64:
+pasa en los Samsung de gama baja con Exynos 850 (**A13, A12, M12**…), cuyo
+`abilist` es solo `armeabi-v7a`. Un APK compilado únicamente para `arm64-v8a` se
+rechaza con el mensaje _"la app no es compatible con tu teléfono"_.
+
+Por eso el script compila por defecto **`arm64-v8a,armeabi-v7a`** (≈77 MB) y
+nombra el archivo con las ABIs incluidas. Opciones:
+
+| Comando                                                         | ABIs          | Tamaño | Para quién                            |
+| --------------------------------------------------------------- | ------------- | ------ | ------------------------------------- |
+| `bash scripts/build-apk.sh`                                     | arm64 + armv7 | ~77 MB | cualquier teléfono real (recomendado) |
+| `ABIS=arm64-v8a bash scripts/build-apk.sh`                      | arm64         | ~59 MB | solo móviles modernos                 |
+| `ABIS="arm64-v8a,armeabi-v7a,x86_64" bash scripts/build-apk.sh` | + x86_64      | ~95 MB | incluye emuladores                    |
+
+Para comprobar en un teléfono Android qué soporta:
+`adb shell getprop ro.product.cpu.abilist` (si no aparece `arm64-v8a`, es 32 bits).
+
 Limitaciones del APK local:
 
 - Va firmado con el **keystore de debug** del proyecto: sirve para sideload, no

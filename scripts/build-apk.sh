@@ -7,9 +7,13 @@
 # laptop (C++ codegen for 4 architectures + a 3 GB Gradle heap with ~5 GB free).
 #
 # Usage:
-#   bash scripts/build-apk.sh                 # arm64-v8a only (recommended)
-#   ABIS="arm64-v8a,armeabi-v7a" bash scripts/build-apk.sh   # + older 32-bit
-#   ABIS="arm64-v8a,armeabi-v7a,x86_64" bash scripts/build-apk.sh
+#   bash scripts/build-apk.sh                 # arm64 + armeabi-v7a (default)
+#   ABIS="arm64-v8a" bash scripts/build-apk.sh               # solo 64 bits (más pequeño y rápido)
+#   ABIS="arm64-v8a,armeabi-v7a,x86_64" bash scripts/build-apk.sh  # + emuladores
+#
+# Why two ABIs by default: some budget Samsung models (A13/A12/M12 with Exynos
+# 850) ship 32-bit-only Android, and an arm64-only APK is rejected by the
+# installer with "app isn't compatible with your phone".
 #   DAEMON=1 bash scripts/build-apk.sh        # keep a Gradle daemon (faster reruns)
 #   PREPARE_ONLY=1 bash scripts/build-apk.sh  # only check the toolchain
 #
@@ -36,7 +40,7 @@ export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 
-ABIS="${ABIS:-arm64-v8a}"
+ABIS="${ABIS:-arm64-v8a,armeabi-v7a}"
 MAX_WORKERS="${MAX_WORKERS:-2}"
 GRADLE_HEAP="${GRADLE_HEAP:-2g}"
 KOTLIN_HEAP="${KOTLIN_HEAP:-1g}"
@@ -149,7 +153,8 @@ BUILDS="$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
 AAPT="$ANDROID_HOME/build-tools/$BUILDS/aapt2"
 APKSIGNER="$ANDROID_HOME/build-tools/$BUILDS/apksigner"
 VERSION_CODE="$("$AAPT" dump badging "$APK_SRC" 2>/dev/null | sed -nE "s/.*versionCode='([0-9]+)'.*/\1/p" | head -1)"
-APK_OUT="$OUT_DIR/fotoproy-${VERSION}-${VERSION_CODE:-0}.apk"
+ABI_TAG="$(echo "$ABIS" | tr ',' '+')"
+APK_OUT="$OUT_DIR/fotoproy-${VERSION}-${VERSION_CODE:-0}-${ABI_TAG}.apk"
 cp -f "$APK_SRC" "$APK_OUT"
 
 echo "  file:        $APK_OUT"
