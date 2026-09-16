@@ -18,7 +18,7 @@
 | [README.md](README.md)           | Inicio rápido + comandos.                                                                                                    |
 | [AGENTS.md](AGENTS.md)           | Este archivo: reglas y flujos.                                                                                               |
 
-**Estado actual:** Fase 0 ✅ (M0) · Fase 1 ✅ (M1) · **Fase 2 ✅ (M2)** — storage S3-compatible (MinIO dev / R2 prod) con pre-signed URLs, photos idempotentes org-scoped con thumbnails JPEG, motor de sync offline-first (FIFO + backoff, NetInfo, UI de pendientes, galería en línea) — validado en dispositivo. **Fase 3 ✅ (M3, tag `v0.2.0-m3`)**: planos (subida/progreso, visor con zoom, lista), **anclaje de fotos por toque → pines (x%,y%)** local-first con sync, pines sobre el plano, fotos del plano, filtros de galería (autor/fecha/plano) y comentarios offline-first — validado en dispositivo (incl. cola offline que sube sola al reconectar; v1.24). **Fase 4 🚧 en curso**: **F4.1 ✅** enlaces de solo lectura (token hasheado, expiración, revocar, `POST/GET/DELETE /shares`, pantalla “Compartir avance”) y **F4.2 ✅** vista web server-rendered (validados en dispositivo 2026-09-16), **F4.3 ✅** pulido UX/offline, **F4.3.1 ✅** rediseño visual “blueprint industrial”, **F4.3.2 ✅** planos: flujo de anclaje explícito (botón + puntero arrastrable + “Fijar aquí”), zoom tipo galería con foco, quitar del plano (soft-remove `removedAt` + cola `pin_remove`) y **planos offline** (caché en `project_plans.localUri`) y **F4.3.3 ✅** planos y anclajes en la vista web compartida (sección “Planos de la obra”, página de plano con marcadores numerados, medios por proxy). Spec en [docs/shares.md](docs/shares.md). **Pendiente crítico:** **F2.4 despliegue** (credenciales Cloudflare R2 + dominio) — sin él los enlaces de solo lectura solo funcionan dentro de la LAN. Siguiente bloque acordado: **mejora de usabilidad de planos/mapas** (incluye el hueco offline: la imagen del plano no se cachea en el dispositivo), luego **F4.4 QA** y **F4.5 seguridad**; F4.6–F4.7 después. Ver ROADMAP para detalle.
+**Estado actual:** Fase 0 ✅ (M0) · Fase 1 ✅ (M1) · **Fase 2 ✅ (M2)** — storage S3-compatible (MinIO dev / R2 prod) con pre-signed URLs, photos idempotentes org-scoped con thumbnails JPEG, motor de sync offline-first (FIFO + backoff, NetInfo, UI de pendientes, galería en línea) — validado en dispositivo. **Fase 3 ✅ (M3, tag `v0.2.0-m3`)**: planos (subida/progreso, visor con zoom, lista), **anclaje de fotos por toque → pines (x%,y%)** local-first con sync, pines sobre el plano, fotos del plano, filtros de galería (autor/fecha/plano) y comentarios offline-first — validado en dispositivo (incl. cola offline que sube sola al reconectar; v1.24). **Fase 4 🚧 en curso**: **F4.1 ✅** enlaces de solo lectura (token hasheado, expiración, revocar, `POST/GET/DELETE /shares`, pantalla “Compartir avance”) y **F4.2 ✅** vista web server-rendered (validados en dispositivo 2026-09-16), **F4.3 ✅** pulido UX/offline, **F4.3.1 ✅** rediseño visual “blueprint industrial”, **F4.3.2 ✅** planos: flujo de anclaje explícito (botón + puntero arrastrable + “Fijar aquí”), zoom tipo galería con foco, quitar del plano (soft-remove `removedAt` + cola `pin_remove`) y **planos offline** (caché en `project_plans.localUri`) y **F4.3.3 ✅** planos y anclajes en la vista web compartida (sección “Planos de la obra”, página de plano con marcadores numerados, medios por proxy). Spec en [docs/shares.md](docs/shares.md). **Pendiente crítico:** **F2.4 despliegue** — la infraestructura ya está en el repo (Dockerfile de la API, `docker-compose.prod.yml` con Caddy+TLS, `scripts/deploy.sh`, [docs/deployment.md](docs/deployment.md)) y el smoke de shares pasa 44/44 contra la imagen de producción; **falta ejecutarlo** con servidor + dominio + credenciales R2 reales. Hasta entonces los enlaces de solo lectura solo funcionan dentro de la LAN. Siguiente bloque acordado: **F4.4 QA** y **F4.5 seguridad** (rate limiting en endpoints públicos, límites de subida, EXIF); F4.6–F4.7 después. Ver ROADMAP para detalle.
 
 ---
 
@@ -37,15 +37,15 @@
 
 ## 3. Stack efectivo (2026 — ¡no asumir versiones viejas!)
 
-| Capa              | Decisión                                                             | Gotchas                                                                                                                  |
-| ----------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Runtime           | **Node 26** (`.nvmrc`) + **pnpm 11** (`packageManager` en raíz)      | —                                                                                                                        |
-| Lenguaje          | **TypeScript 6.0.3** en todo el monorepo                             | **NO usar TS 7.x**: eliminó `moduleResolution: node10` y Nest CLI requiere la API de compilador que recién vuelve en 7.1 |
-| Resolución        | Base: `module`/`moduleResolution: node16`                            | `packages/*` emiten CJS; `apps/api` es **ESM** (`"type": "module"`) → **imports relativos con extensión `.js`**          |
-| Backend           | **NestJS 12** (ESM) + class-validator/class-transformer instalados   | ValidationPipe global ya configurado                                                                                     |
-| ORM/BD            | **Prisma 6.19.3** + PostgreSQL 16/PostGIS (docker)                   | **NO `prisma@latest`** (apunta a 8-rc; v7 exige driver adapters + `prisma.config.ts`). Migrar a 7 = tarea dedicada       |
-| Contratos         | **zod en `@fotoproy/shared`** (schemas + tipos derivados)            | Fuente única de contratos app ⇄ API                                                                                      |
-| Paquetes internos | `@fotoproy/shared`, `@fotoproy/database` con protocolo `workspace:*` | —                                                                                                                        |
+| Capa              | Decisión                                                             | Gotchas                                                                                                                                                                                                                                                                                                                                   |
+| ----------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime           | **Node 26** (`.nvmrc`) + **pnpm 11** (`packageManager` en raíz)      | **Node 26 ya no trae corepack**: instalar pnpm con `npm i -g pnpm@11.24.0` (el Dockerfile lo hace así). **pnpm 11 renombró `onlyBuiltDependencies` a `allowBuilds`** (mapa paquete→booleano) y con `strictDepBuilds=true` (default) un script de dependencia no aprobado **falla el install**: lo aprobado vive en `pnpm-workspace.yaml`. |
+| Lenguaje          | **TypeScript 6.0.3** en todo el monorepo                             | **NO usar TS 7.x**: eliminó `moduleResolution: node10` y Nest CLI requiere la API de compilador que recién vuelve en 7.1                                                                                                                                                                                                                  |
+| Resolución        | Base: `module`/`moduleResolution: node16`                            | `packages/*` emiten CJS; `apps/api` es **ESM** (`"type": "module"`) → **imports relativos con extensión `.js`**                                                                                                                                                                                                                           |
+| Backend           | **NestJS 12** (ESM) + class-validator/class-transformer instalados   | ValidationPipe global ya configurado                                                                                                                                                                                                                                                                                                      |
+| ORM/BD            | **Prisma 6.19.3** + PostgreSQL 16/PostGIS (docker)                   | **NO `prisma@latest`** (apunta a 8-rc; v7 exige driver adapters + `prisma.config.ts`). Migrar a 7 = tarea dedicada                                                                                                                                                                                                                        |
+| Contratos         | **zod en `@fotoproy/shared`** (schemas + tipos derivados)            | Fuente única de contratos app ⇄ API                                                                                                                                                                                                                                                                                                       |
+| Paquetes internos | `@fotoproy/shared`, `@fotoproy/database` con protocolo `workspace:*` | —                                                                                                                                                                                                                                                                                                                                         |
 
 **Puertos locales fijos:** BD docker = **55432**, API dev = **4100** (5432/5433/3000 están ocupados por otros servicios de la máquina — NO usarlos).
 
@@ -62,7 +62,10 @@ fotoproy/
 │  ├─ shared/     # zod schemas + tipos (contrato) — sin dependencias internas
 │  └─ database/   # schema.prisma (fuente de verdad BD) + migraciones + re-export del cliente
 ├─ docs/          # SPEC (v2.1) + archive/ (historial)
-├─ docker-compose.yml  # Postgres 16 + PostGIS → localhost:55432
+├─ docker-compose.yml       # dev: Postgres 16 + PostGIS → localhost:55432 (+ MinIO)
+├─ docker-compose.prod.yml  # prod: API + Caddy (TLS) [+ PostgreSQL opcional]
+├─ Dockerfile               # imagen de producción de la API (multi-stage)
+├─ deploy/caddy/Caddyfile   # proxy inverso + Let's Encrypt
 ├─ AGENTS.md / README.md / ROADMAP.md
 └─ package.json   # workspace raíz + scripts
 ```
@@ -110,6 +113,16 @@ pnpm db:studio            # explorar BD
 pnpm db:down              # detener BD docker
 ```
 
+### Producción (F2.4)
+
+```bash
+bash scripts/deploy.sh              # build + migraciones + arranque + health check
+bash scripts/deploy.sh --selfhosted-db   # además levanta PostgreSQL en el propio host
+docker compose -f docker-compose.prod.yml logs -f api
+```
+
+Runbook completo (servidor, DNS, R2, backups, rollback): [docs/deployment.md](docs/deployment.md).
+
 ### Añadir dependencias (siempre dentro del paquete correcto)
 
 ```bash
@@ -121,7 +134,7 @@ pnpm -w add -D <pkg>                             # dep de la raíz (herramientas
 
 ### ⚠️ Gotcha de Prisma (importante)
 
-El `postinstall` de `packages/database` corre `prisma generate` y **falla si el binario aún no existe** (p. ej. al instalar `@prisma/client` antes que `prisma`). Si un install falla por esto:
+El `postinstall` de `packages/database` corre `prisma generate` y **falla si el binario aún no existe** (p. ej. al instalar `@prisma/client` antes que `prisma`) o si `packages/database/prisma/` todavía no está en disco (caso del build Docker, que por eso copia el schema antes de instalar). Si un install falla por esto:
 
 ```bash
 pnpm add <pkg> --ignore-scripts        # instala sin postinstall
@@ -169,7 +182,9 @@ Ver tareas F3.0–F3.6 del ROADMAP. **Implementado** (backend a55d312; móvil 03
 
 - [ ] NO instalar `typescript@7` ni `prisma@latest` / `@prisma/client@7+` (usar TS 6.0.3 y Prisma 6.19.3).
 - [ ] NO usar los puertos 3000 / 5432 / 5433 (ocupados por otros proyectos/servicios).
-- [ ] NO commitear `.env` (solo `.env.example`, en inglés).
+- [ ] NO commitear `.env` (solo `.env.example` y `.env.production.example`, en inglés).
+- [ ] En producción **nunca** `prisma migrate dev` — usar `prisma migrate deploy` (`pnpm --filter @fotoproy/database db:deploy`, ya integrado en `scripts/deploy.sh`).
+- [ ] La imagen Docker **no** debe contener secretos: `apps/api/.env` se inyecta en runtime (`env_file`), nunca se copia al contexto (`dockerignore`).
 - [ ] NO escribir español en código/comentarios/schema; sí en docs y copy UI.
 - [ ] En `apps/api` (ESM), los imports relativos llevan `.js`.
 - [ ] No editar migraciones ya aplicadas; crear migración nueva.

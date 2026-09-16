@@ -77,15 +77,16 @@ fotoproy/
 
 ## Documentación
 
-| Documento                                  | Descripción                                                                                                                         |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| [docs/SPEC.md](docs/SPEC.md)               | Especificación técnica y de producto **v2.1**: visión, alcance del MVP, stack, arquitectura, modelo de datos y decisiones cerradas. |
-| [docs/development.md](docs/development.md) | Guía de desarrollo: cómo levantar el backend, la app en el celular con Expo Go, demo M2 offline y solución de problemas.            |
-| [docs/metadata.md](docs/metadata.md)       | Referencia del producto: metadatos registrados por foto/video (captura, sync, estampa visual, servidor).                            |
-| [docs/shares.md](docs/shares.md)           | Enlaces de solo lectura (F4.1): decisiones, modelo de datos, endpoints privados/públicos, seguridad y criterios de aceptación.      |
-| [ROADMAP.md](ROADMAP.md)                   | Plan de implementación: fases F0–F4 con tareas, criterios de terminado, hitos, riesgos y backlog post-MVP.                          |
-| [AGENTS.md](AGENTS.md)                     | Reglas y flujos de trabajo para agentes de código: idiomas, convenciones, comandos y trampas.                                       |
-| [docs/archive/](docs/archive/)             | Historial de versiones (SPEC v1.0 original, foco eléctrico LATAM).                                                                  |
+| Documento                                  | Descripción                                                                                                                                 |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| [docs/SPEC.md](docs/SPEC.md)               | Especificación técnica y de producto **v2.1**: visión, alcance del MVP, stack, arquitectura, modelo de datos y decisiones cerradas.         |
+| [docs/development.md](docs/development.md) | Guía de desarrollo: cómo levantar el backend, la app en el celular con Expo Go, demo M2 offline y solución de problemas.                    |
+| [docs/metadata.md](docs/metadata.md)       | Referencia del producto: metadatos registrados por foto/video (captura, sync, estampa visual, servidor).                                    |
+| [docs/shares.md](docs/shares.md)           | Enlaces de solo lectura (F4.1): decisiones, modelo de datos, endpoints privados/públicos, seguridad y criterios de aceptación.              |
+| [docs/deployment.md](docs/deployment.md)   | **Producción (F2.4)**: qué se despliega, decisiones y credenciales necesarias, VPS con Docker + Caddy, R2, migraciones, backups y rollback. |
+| [ROADMAP.md](ROADMAP.md)                   | Plan de implementación: fases F0–F4 con tareas, criterios de terminado, hitos, riesgos y backlog post-MVP.                                  |
+| [AGENTS.md](AGENTS.md)                     | Reglas y flujos de trabajo para agentes de código: idiomas, convenciones, comandos y trampas.                                               |
+| [docs/archive/](docs/archive/)             | Historial de versiones (SPEC v1.0 original, foco eléctrico LATAM).                                                                          |
 
 ---
 
@@ -108,6 +109,18 @@ Verificar que la API está viva: `curl http://localhost:4100/health` → `{"stat
 Comandos útiles: `pnpm dev:stop` · `pnpm build` · `pnpm lint` · `pnpm format` · `pnpm db:studio` · `pnpm db:down`.
 
 > 📌 **Puertos locales:** BD **55432** · MinIO **9000/9001** · API **4100** · Metro **8081** (5432/5433/3000 están ocupados por otros servicios de esta máquina).
+
+---
+
+## Producción (F2.4)
+
+La API se despliega como contenedor Docker con Caddy delante (TLS automático) y Cloudflare R2 para los archivos. La infraestructura vive en el repo; el despliegue lo ejecuta `scripts/deploy.sh`.
+
+```bash
+bash scripts/deploy.sh --selfhosted-db   # build + migraciones + arranque + health check
+```
+
+Runbook completo (dominio, R2, backups, rollback y lo que falta): [docs/deployment.md](docs/deployment.md).
 
 ---
 

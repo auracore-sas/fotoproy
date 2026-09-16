@@ -2,6 +2,7 @@
 
 > Público: quien desarrolla o prueba FotoProy en su máquina.
 > Requisitos previos: **Node 26** (`.nvmrc`), **pnpm 11**, **Docker** con el daemon corriendo, y el repo clonado con `pnpm install` ya ejecutado.
+> Para llevar el backend a un servidor real (dominio, R2, migraciones, backups) ver [deployment.md](deployment.md).
 
 ---
 
