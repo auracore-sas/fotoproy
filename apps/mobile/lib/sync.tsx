@@ -44,6 +44,7 @@ import {
 } from './db';
 import type { SyncQueueItem } from './db';
 import type { MediaKind, UploadableMediaType } from './types';
+import { MAX_UPLOAD_BYTES } from './types';
 
 /** Per-entity sync state shown as badges on gallery tiles. */
 export type ItemSyncState = 'PENDING' | 'UPLOADING' | 'FAILED';
@@ -88,6 +89,10 @@ function humanError(error: unknown): string {
     return error.message;
   }
   return 'Error de conexión';
+}
+
+function megabytes(bytes: number): number {
+  return Math.round(bytes / (1024 * 1024));
 }
 
 export class SyncEngine {
@@ -251,6 +256,25 @@ export class SyncEngine {
       const kind = photo.kind as MediaKind;
       const contentType = contentTypes[kind];
 
+      // F4.6 — fail fast when the file can never be uploaded: check the size
+      // locally against the API cap, so the user sees the reason immediately
+      // instead of after a long transfer (and without burning data).
+      const maxBytes = kind === 'VIDEO' ? MAX_UPLOAD_BYTES.VIDEO : MAX_UPLOAD_BYTES.PHOTO;
+      let sizeBytes: number | undefined;
+      try {
+        const info = await FileSystem.getInfoAsync(photo.localUri);
+        sizeBytes = info.exists ? info.size : undefined;
+      } catch {
+        sizeBytes = undefined; // unreadable file size: let the server decide
+      }
+      if (sizeBytes !== undefined && sizeBytes > maxBytes) {
+        return this.parkPermanently(
+          item,
+          `El archivo pesa ${megabytes(sizeBytes)} MB y el máximo para este tipo es ` +
+            `${megabytes(maxBytes)} MB. Recórtalo o baja la calidad y vuelve a intentarlo.`,
+        );
+      }
+
       // 1. pre-signed PUT URL for this media object.
       let presign;
       try {
@@ -258,6 +282,7 @@ export class SyncEngine {
           id: photo.id,
           projectId: photo.projectId,
           contentType,
+          sizeBytes,
         });
       } catch (error) {
         return this.classifyApiError(item, error);
@@ -457,7 +482,19 @@ export class SyncEngine {
     if (options.photoDependent && error instanceof ApiError && error.status === 404) {
       return this.failAndSchedule(item, message);
     }
+    // The server rejected the object size (F4.5): retrying cannot help.
+    if (error instanceof ApiError && error.status === 413) {
+      return this.parkPermanently(
+        item,
+        'El archivo supera el tamaño máximo permitido. Recórtalo o baja la calidad y vuelve a intentarlo.',
+      );
+    }
     // Permanent validation/authorization failure: park until an explicit retry.
+    return this.parkPermanently(item, message);
+  }
+
+  /** Parks an item that the server will never accept, until a manual retry. */
+  private async parkPermanently(item: SyncQueueItem, message: string): Promise<'permanent'> {
     await markSyncFailed(item.id, message, item.attempts + 1, true);
     this.update({ syncing: false, lastError: message });
     await this.refreshState();

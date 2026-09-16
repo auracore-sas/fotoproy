@@ -62,7 +62,22 @@ export interface PresignPhotoUploadPayload {
   id: string;
   projectId: string;
   contentType: UploadableMediaType;
+  /** Expected object size; lets the API reject an oversized upload up front. */
+  sizeBytes?: number;
 }
+
+/**
+ * Upload caps, mirrored from `MAX_UPLOAD_BYTES` in `@fotoproy/shared`.
+ *
+ * The app checks the file size before uploading so the user gets an immediate,
+ * actionable message instead of a rejection after the transfer. The API enforces
+ * the same caps (and can be configured lower per environment), so this is a UX
+ * shortcut, not the security boundary.
+ */
+export const MAX_UPLOAD_BYTES = {
+  PHOTO: 25 * 1024 * 1024,
+  VIDEO: 200 * 1024 * 1024,
+} as const;
 
 export interface PresignUploadResponse {
   storageKey: string;

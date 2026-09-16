@@ -65,6 +65,28 @@ const project = await post(
 );
 console.log(`project ${project.status} · ${project.body.id}`);
 
+// 2b. F4.5 rejections (they create no data) ---------------------------------
+const strictBody = await post(
+  '/projects',
+  { code: `CHECK-X-${TS}`, name: 'Unknown field', organizationId: 'spoofed' },
+  token,
+);
+console.log(`strict body with unknown field ${strictBody.status} (expect 400)`);
+
+const oversize = await post(
+  '/photos/presign',
+  {
+    id: randomUUID(),
+    projectId: project.body.id,
+    contentType: 'image/jpeg',
+    sizeBytes: 999 * 1024 * 1024,
+  },
+  token,
+);
+console.log(
+  `presign declaring 999 MB ${oversize.status} ${oversize.body.code ?? ''} (expect 413 UPLOAD_TOO_LARGE)`,
+);
+
 // 3. Pre-signed upload, exactly like the phone ------------------------------
 const photoId = randomUUID();
 const presign = await post(

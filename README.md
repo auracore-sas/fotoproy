@@ -84,6 +84,7 @@ fotoproy/
 | [docs/metadata.md](docs/metadata.md)       | Referencia del producto: metadatos registrados por foto/video (captura, sync, estampa visual, servidor).                                    |
 | [docs/shares.md](docs/shares.md)           | Enlaces de solo lectura (F4.1): decisiones, modelo de datos, endpoints privados/públicos, seguridad y criterios de aceptación.              |
 | [docs/deployment.md](docs/deployment.md)   | **Producción (F2.4)**: qué se despliega, decisiones y credenciales necesarias, VPS con Docker + Caddy, R2, migraciones, backups y rollback. |
+| [docs/release.md](docs/release.md)         | **Distribución móvil (F4.6)**: EAS Build/Update, perfiles, versionado (build number + esquema local), TestFlight y Play Internal Testing.   |
 | [ROADMAP.md](ROADMAP.md)                   | Plan de implementación: fases F0–F4 con tareas, criterios de terminado, hitos, riesgos y backlog post-MVP.                                  |
 | [AGENTS.md](AGENTS.md)                     | Reglas y flujos de trabajo para agentes de código: idiomas, convenciones, comandos y trampas.                                               |
 | [docs/archive/](docs/archive/)             | Historial de versiones (SPEC v1.0 original, foco eléctrico LATAM).                                                                          |
@@ -101,7 +102,7 @@ pnpm install              # primera vez: instala workspaces (genera Prisma Clien
 pnpm db:migrate           # primera vez: aplica las migraciones Prisma
 
 pnpm dev:up               # día a día: Docker (BD+MinIO) + API :4100 + envs con tu IP LAN
-pnpm dev:mobile           # terminal 2: Metro/Expo Go (escanea el QR con el celular)
+pnpm dev:mobile:go        # terminal 2: Metro/Expo Go (escanea el QR con el celular)
 ```
 
 Verificar que la API está viva: `curl http://localhost:4100/health` → `{"status":"ok","db":"up",...}`.

@@ -5,11 +5,17 @@
   "description": "FotoProy mobile app (Expo + React Native + TypeScript, iOS + Android)",
   "main": "expo-router/entry",
   "scripts": {
-    "start": "expo start",
+    "start": "expo start --go",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "start:dev": "expo start --dev-client",
+    "build:dev": "npx eas-cli@latest build --profile development --platform all",
+    "build:preview": "npx eas-cli@latest build --profile preview --platform all",
+    "build:prod": "npx eas-cli@latest build --profile production --platform all",
+    "update:preview": "npx eas-cli@latest update --branch preview",
+    "update:prod": "npx eas-cli@latest update --branch production"
   },
   "dependencies": {
     "@expo-google-fonts/manrope": "^0.4.2",
@@ -20,6 +26,7 @@
     "expo-camera": "~57.0.4",
     "expo-constants": "~57.0.17",
     "expo-crypto": "~57.0.2",
+    "expo-dev-client": "~57.0.19",
     "expo-file-system": "~57.0.6",
     "expo-font": "~57.0.4",
     "expo-image": "~57.0.5",
@@ -32,6 +39,7 @@
     "expo-sharing": "~57.0.18",
     "expo-sqlite": "~57.0.2",
     "expo-status-bar": "~57.0.1",
+    "expo-updates": "~57.0.22",
     "expo-video": "~57.0.3",
     "expo-video-thumbnails": "~57.0.1",
     "react": "19.2.3",

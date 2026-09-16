@@ -2,7 +2,7 @@
   "name": "fotoproy",
   "version": "0.1.0",
   "private": true,
-  "description": "FotoProy — construction project photo documentation (offline-first, mobile iOS + Android)",
+  "description": "FotoProy \u2014 construction project photo documentation (offline-first, mobile iOS + Android)",
   "packageManager": "pnpm@11.24.0",
   "engines": {
     "node": ">=22"
@@ -30,7 +30,8 @@
     "db:down": "docker compose down",
     "db:migrate": "pnpm --filter @fotoproy/database db:migrate",
     "db:generate": "pnpm --filter @fotoproy/database db:generate",
-    "db:studio": "pnpm --filter @fotoproy/database db:studio"
+    "db:studio": "pnpm --filter @fotoproy/database db:studio",
+    "dev:mobile:go": "pnpm --filter @fotoproy/mobile start"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

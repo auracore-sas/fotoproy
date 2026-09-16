@@ -103,6 +103,7 @@ pnpm db:migrate           # aplica migraciones Prisma (usa packages/database/.en
 ```bash
 pnpm dev:up               # TODO backend: Docker (BD+MinIO) + API :4100 en background + envs con tu IP LAN
 pnpm dev:mobile           # Metro/Expo Go para el celular (terminal 2) — ver docs/development.md
+pnpm dev:mobile:go        # igual, forzando Expo Go (con expo-dev-client instalado, `start` prefiere el dev client)
 pnpm dev:stop             # detiene la API dev (contenedores siguen arriba)
 curl http://localhost:4100/health   # {"status":"ok","db":"up",...}
 pnpm build                # compila todo en orden topológico
@@ -124,6 +125,16 @@ docker compose -f docker-compose.prod.yml logs -f api
 ```
 
 Runbook completo (Dokploy paso a paso, DNS, R2, backups, rollback): [docs/deployment.md](docs/deployment.md).
+
+### Distribución móvil (F4.6)
+
+```bash
+pnpm --filter @fotoproy/mobile build:preview   # APK/IPA interno para probar en un teléfono
+pnpm --filter @fotoproy/mobile build:prod      # build de tiendas
+pnpm --filter @fotoproy/mobile update:prod     # OTA (solo JavaScript)
+```
+
+Perfiles, versionado (build number + esquema local SQLite), TestFlight y Play Internal Testing: [docs/release.md](docs/release.md).
 
 ### Repositorio remoto
 
