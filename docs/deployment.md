@@ -391,8 +391,13 @@ de sincronización y los planos offline no dependen del despliegue.
       contenedor conecta a la base (`db: up`) y firma/recibe objetos en
       `minio-api.apx5.com`. Pendiente de mejora: usuario dedicado de MinIO en
       lugar del root.
-- [~] Despliegue verificado: `https://fotoproy.apx5.com/health` responde `ok`
-  con `db: up`, el bucket `fotoproy` existe y el camino firmado
-  (PUT/GET) responde 200. Falta confirmar `storage: up` tras redesplegar
-  (la API debe alcanzar `minio:9000`) y la subida desde el teléfono.
+- [x] **Despliegue verificado (2026-09-16)**: `https://fotoproy.apx5.com/health`
+      responde `{"status":"ok","db":"up","storage":"up"}`, el arranque
+      registra `Bucket "fotoproy" ready at http://minio:9000` y
+      `Signed URLs use https://minio-api.apx5.com`, el camino firmado (PUT/GET)
+      responde 200 y la página pública con token inválido devuelve la página
+      404 correcta (HTML) o JSON según `Accept`.
+- [ ] Falta el DoD de negocio: un **enlace con fotos reales abierto desde fuera
+      de la LAN** (necesita datos, p. ej. la prueba end-to-end o la subida desde
+      el móvil tras el build de F4.6).
 - [ ] CI de despliegue (opcional): hoy el release es `git push` + Deploy.
