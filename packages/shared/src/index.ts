@@ -338,6 +338,8 @@ export const photoPinSchema = z.object({
   xPercentage: z.number(),
   yPercentage: z.number(),
   createdAt: z.string().datetime({ offset: true }),
+  /** Soft-remove timestamp: the pin was detached from the plan (photo kept). */
+  removedAt: z.string().datetime({ offset: true }).nullable().optional(),
   photo: z
     .object({
       id: uuidSchema,

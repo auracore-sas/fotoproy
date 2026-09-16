@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -85,11 +86,42 @@ export class PinsService {
       throw new NotFoundException('Plan not found');
     }
     const pins = await this.prisma.photoPin.findMany({
-      where: { planId },
+      where: { planId, removedAt: null },
       include: { photo: true },
       orderBy: { createdAt: 'asc' },
     });
     return Promise.all(pins.map((pin) => this.toDto(pin)));
+  }
+
+  /**
+   * Detaches a pin from the plan (soft-remove). The evidence photo is never
+   * deleted — only the anchor disappears — which keeps the append-only model
+   * and makes the operation idempotent (offline retries are safe).
+   */
+  async remove(current: AuthedUser, pinId: string): Promise<PhotoPin> {
+    const pin = await this.prisma.photoPin.findFirst({
+      where: { id: pinId, plan: { project: { organizationId: current.organizationId } } },
+      include: { photo: true },
+    });
+    if (!pin) {
+      throw new NotFoundException('Pin not found');
+    }
+    const isOwner = pin.createdById === current.userId;
+    const isManager = current.role === 'ADMIN' || current.role === 'SUPERVISOR';
+    if (!isOwner && !isManager) {
+      throw new ForbiddenException(
+        'Only the author, an administrator or a supervisor can detach this pin',
+      );
+    }
+    if (pin.removedAt) {
+      return this.toDto(pin); // already detached → idempotent
+    }
+    const updated = await this.prisma.photoPin.update({
+      where: { id: pinId },
+      data: { removedAt: new Date() },
+      include: { photo: true },
+    });
+    return this.toDto(updated);
   }
 
   private async toDto(pin: DbPin & { photo?: unknown }): Promise<PhotoPin> {
@@ -122,6 +154,7 @@ export class PinsService {
       xPercentage: Number(pin.xPercentage),
       yPercentage: Number(pin.yPercentage),
       createdAt: pin.createdAt.toISOString(),
+      removedAt: pin.removedAt ? pin.removedAt.toISOString() : null,
       photo: photo
         ? {
             id: photo.id,
