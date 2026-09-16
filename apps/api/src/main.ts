@@ -8,7 +8,18 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // Basic security and CORS (harden in F4.5).
-  app.use(helmet());
+  // `upgrade-insecure-requests` is disabled on purpose: it does nothing for a
+  // JSON API, and on plain-HTTP deployments (dev/LAN/staging) it makes the
+  // browser rewrite the public share page's same-origin media URLs to HTTPS,
+  // so every image fails to load. The share pages ship their own CSP.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: { upgradeInsecureRequests: null },
+      },
+    }),
+  );
   const corsOrigin = process.env.CORS_ORIGIN?.split(',') ?? ['*'];
   app.enableCors({ origin: corsOrigin.includes('*') ? true : corsOrigin });
 

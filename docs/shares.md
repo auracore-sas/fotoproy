@@ -98,6 +98,7 @@ Servida por la propia API, **sin SPA ni build**: HTML + CSS en línea generado e
 Detalles de implementación y seguridad:
 
 - **Los medios se sirven a través de la API**, no con URLs firmadas del bucket: así el host de storage nunca se expone en la vista pública y el navegador no puede “ascender” la petición a HTTPS (Chrome sube `http://…:9000` a `https://…:9000`; MinIO local es HTTP puro y las miniaturas quedaban en gris). Los objetos se **streamean** sin cargarlos en memoria (`Cache-Control: private, max-age=300`).
+- **Las páginas públicas no envían `upgrade-insecure-requests`** (fix 2026-09-16). Helmet lo añade por defecto y, en despliegues HTTP (dev/LAN/staging), el navegador reescribe **también los medios same-origin** a `https://…:4100/…`, con lo que **ninguna imagen carga** aunque el proxy responda 200. Las páginas fijan su propio CSP (`default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`) y el directivo se eliminó del CSP global (no aporta nada a una API JSON). En producción con HTTPS el problema no se manifestaba, pero cualquier entorno HTTP sí lo sufría.
 - El JSON de `GET /s/:token` (clientes de API) sigue entregando URLs firmadas de vida corta; la vista web usa el proxy.
 - Todos los datos de usuario (nombres, descripciones, notas) se **escapan** antes de interpolarse en el HTML.
 - Los enlaces internos son **absolutos** (se construyen con `PUBLIC_BASE_URL` o el host del request), así la página funciona igual servida desde cualquier proxy.

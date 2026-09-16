@@ -14,6 +14,15 @@ function prefersHtml(accept: string | undefined): boolean {
   return accept.includes('text/html');
 }
 
+/**
+ * CSP for the public pages: same-origin media (served through the API proxy),
+ * inline CSS, no scripts and no framing. Notably it does NOT include
+ * `upgrade-insecure-requests`, which would rewrite the media URLs to HTTPS and
+ * break every image when the API is served over plain HTTP (dev/LAN/staging).
+ */
+const PAGE_CSP =
+  "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
 interface ShareErrorLike {
   status: number;
   code: ShareErrorCode;
@@ -65,6 +74,7 @@ export class PublicSharesController {
     const html = prefersHtml(request.headers.accept);
     try {
       if (html) {
+        setPageHeaders(response);
         response.type('html').send(await this.sharesService.renderProjectPage(token, request));
       } else {
         response.json(await this.sharesService.viewPublic(token));
@@ -86,6 +96,7 @@ export class PublicSharesController {
     const html = prefersHtml(request.headers.accept);
     try {
       if (html) {
+        setPageHeaders(response);
         response
           .type('html')
           .send(await this.sharesService.renderPhotoDetailPage(token, photoId, request));
@@ -135,6 +146,12 @@ export class PublicSharesController {
       response.status(status).json({ statusCode: status, code, message: 'Share link error' });
       return;
     }
+    setPageHeaders(response);
     response.status(status).type('html').send(renderErrorPage(code));
   }
+}
+
+/** Headers shared by every HTML response of the public share view. */
+function setPageHeaders(response: Response): void {
+  response.setHeader('Content-Security-Policy', PAGE_CSP);
 }
