@@ -97,6 +97,16 @@ export default function CaptureScreen() {
     setZoom(clamped);
   };
 
+  /**
+   * Switching to video asks for the microphone up-front: the user learns about
+   * a denied mic before recording instead of finding a silent clip later.
+   */
+  const selectVideoMode = async () => {
+    setMode('video');
+    const result = await requestMicPermission().catch(() => null);
+    setForceSilentVideo(!(result?.granted ?? false));
+  };
+
   // Two-finger pinch: opening/closing the finger gap zooms in/out.
   const pinchStartDistance = useRef<number | null>(null);
   const pinchStartZoom = useRef(0);
@@ -457,15 +467,21 @@ export default function CaptureScreen() {
       <View style={styles.center}>
         <Text style={styles.permissionTitle}>Se necesita la cámara</Text>
         <Text style={styles.permissionText}>
-          FotoProy usa la cámara para documentar el avance de tu obra.
+          {permission.canAskAgain
+            ? 'FotoProy usa la cámara para documentar el avance de tu obra.'
+            : 'El permiso de cámara está bloqueado en este dispositivo. Actívalo desde los ajustes para seguir documentando.'}
         </Text>
         <View style={styles.permissionActions}>
-          <Button title="Permitir cámara" onPress={requestPermission} />
-          <View style={{ height: 10 }} />
+          {permission.canAskAgain ? (
+            <>
+              <Button title="Permitir cámara" onPress={requestPermission} />
+              <View style={{ height: 10 }} />
+            </>
+          ) : null}
           <Button
-            title="Abrir ajustes"
+            title={permission.canAskAgain ? 'Abrir ajustes' : 'Abrir ajustes del sistema'}
             variant="secondary"
-            onPress={() => Linking.openSettings()}
+            onPress={() => void Linking.openSettings()}
           />
         </View>
       </View>
@@ -543,7 +559,7 @@ export default function CaptureScreen() {
           </Text>
         </Pressable>
         <Pressable
-          onPress={() => setMode('video')}
+          onPress={() => void selectVideoMode()}
           style={[styles.modeChip, mode === 'video' && styles.modeChipActive]}
           accessibilityRole="button"
         >
@@ -552,6 +568,32 @@ export default function CaptureScreen() {
           </Text>
         </Pressable>
       </View>
+
+      {/* Actionable permission notices (F4.3): tap → system settings. */}
+      {geo.status === 'denied' || (mode === 'video' && forceSilentVideo) ? (
+        <View style={styles.noticeRow}>
+          {geo.status === 'denied' ? (
+            <Pressable
+              onPress={() => void Linking.openSettings()}
+              style={styles.noticeChip}
+              accessibilityRole="button"
+              accessibilityLabel="Activar permiso de ubicación"
+            >
+              <Text style={styles.noticeChipText}>📍 Fotos sin GPS · activar</Text>
+            </Pressable>
+          ) : null}
+          {mode === 'video' && forceSilentVideo ? (
+            <Pressable
+              onPress={() => void Linking.openSettings()}
+              style={styles.noticeChip}
+              accessibilityRole="button"
+              accessibilityLabel="Activar permiso de micrófono"
+            >
+              <Text style={styles.noticeChipText}>🎤 Video sin audio · activar</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
 
       {/* Live stamp overlay */}
       <View style={styles.stampOverlay} pointerEvents="none">
@@ -703,6 +745,23 @@ const styles = StyleSheet.create({
   modeChipActive: { backgroundColor: '#FFFFFF' },
   modeChipText: { color: '#E2E8F0', fontSize: 13, fontWeight: '700' },
   modeChipTextActive: { color: colors.text },
+  noticeRow: {
+    position: 'absolute',
+    top: 150,
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  noticeChip: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  noticeChipText: { color: '#FBBF24', fontSize: 12, fontWeight: '600' },
   stampOverlay: {
     position: 'absolute',
     left: 16,

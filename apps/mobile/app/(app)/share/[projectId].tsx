@@ -176,7 +176,11 @@ export default function ShareLinksScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} />
           }
         >
-          <ErrorBanner message={error} />
+          <ErrorBanner
+            message={error}
+            actionLabel={error ? 'Reintentar' : undefined}
+            onAction={error ? () => void load() : undefined}
+          />
 
           {freshLink?.url ? (
             <View style={styles.freshCard}>

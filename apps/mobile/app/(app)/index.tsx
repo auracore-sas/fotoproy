@@ -1,7 +1,8 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
-import { Button, CenterLoader, colors, ErrorBanner, Screen } from '../../components/ui';
+import { Banner, Button, CenterLoader, colors, EmptyState, ErrorState, Screen } from '../../components/ui';
+import { SyncBar } from '../../components/sync-indicator';
 import { api, ApiError } from '../../lib/api';
 import { errorMessage, useAuth } from '../../lib/auth';
 import { listCachedProjects, replaceCachedProjects } from '../../lib/db';
@@ -19,6 +20,8 @@ export default function ProjectsScreen() {
   // True when the server is unreachable and we are showing the local cache.
   const [offline, setOffline] = useState(false);
   const retryBusyRef = useRef(false);
+  // Only the first load blocks; later focus reloads keep the current list.
+  const loadedOnceRef = useRef(false);
 
   const load = useCallback(
     async (asRefresh = false) => {
@@ -27,7 +30,7 @@ export default function ProjectsScreen() {
       }
       if (asRefresh) {
         setRefreshing(true);
-      } else {
+      } else if (!loadedOnceRef.current) {
         setLoading(true);
       }
       setError(null);
@@ -49,6 +52,7 @@ export default function ProjectsScreen() {
         }
         setError(errorMessage(err));
       } finally {
+        loadedOnceRef.current = true;
         setLoading(false);
         setRefreshing(false);
       }
@@ -141,19 +145,39 @@ export default function ProjectsScreen() {
         </View>
       </View>
 
-      <ErrorBanner message={error} />
-      {offline ? (
-        <View style={styles.offlineBanner}>
-          <Text style={styles.offlineBannerText}>
-            {online
-              ? 'No se pudo conectar al servidor: mostrando proyectos guardados. Reintentando…'
-              : 'Sin conexión: mostrando proyectos guardados. Los cambios se actualizarán al reconectar.'}
-          </Text>
-        </View>
-      ) : null}
+      <View style={styles.bannerArea}>
+        <SyncBar />
+        {error && projects.length > 0 ? (
+          <Banner
+            tone="error"
+            message={error}
+            actionLabel="Reintentar"
+            onAction={() => void load()}
+          />
+        ) : null}
+        {offline ? (
+          <Banner
+            tone="info"
+            icon="📶"
+            message={
+              online
+                ? 'No se pudo conectar al servidor: mostrando proyectos guardados.'
+                : 'Sin conexión: mostrando proyectos guardados. Se actualizarán al reconectar.'
+            }
+            actionLabel="Reintentar ahora"
+            onAction={() => void refreshListSilently()}
+          />
+        ) : null}
+      </View>
 
       {loading ? (
         <CenterLoader />
+      ) : error && projects.length === 0 ? (
+        <ErrorState
+          title="No se pudieron cargar los proyectos"
+          message={error}
+          onRetry={() => void load()}
+        />
       ) : (
         <FlatList
           data={projects}
@@ -162,12 +186,13 @@ export default function ProjectsScreen() {
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>Aún no hay proyectos</Text>
-              <Text style={styles.emptyText}>
-                Crea tu primer proyecto para empezar a documentar la obra.
-              </Text>
-            </View>
+            <EmptyState
+              icon="🏗️"
+              title="Aún no hay proyectos"
+              text="Crea tu primer proyecto para empezar a documentar la obra."
+              actionLabel="+ Nuevo proyecto"
+              onAction={() => router.push('/new-project')}
+            />
           }
         />
       )}
@@ -192,15 +217,7 @@ const styles = StyleSheet.create({
   logoutText: { color: colors.danger, fontWeight: '600' },
   profileButton: { paddingHorizontal: 8, paddingVertical: 6 },
   profileIcon: { fontSize: 20 },
-  offlineBanner: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 8,
-    marginHorizontal: 20,
-    marginBottom: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  offlineBannerText: { color: colors.primary, fontSize: 13, lineHeight: 18 },
+  bannerArea: { paddingHorizontal: 20 },
   list: { paddingHorizontal: 20, paddingBottom: 24 },
   card: {
     backgroundColor: colors.surface,
@@ -215,7 +232,4 @@ const styles = StyleSheet.create({
   status: { fontSize: 12, color: colors.textMuted },
   name: { fontSize: 17, fontWeight: '600', color: colors.text },
   description: { fontSize: 14, color: colors.textMuted, marginTop: 4 },
-  empty: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 24 },
-  emptyTitle: { fontSize: 17, fontWeight: '600', color: colors.text },
-  emptyText: { fontSize: 14, color: colors.textMuted, marginTop: 6, textAlign: 'center' },
 });

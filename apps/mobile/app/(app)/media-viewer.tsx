@@ -7,10 +7,9 @@ import * as FileSystem from 'expo-file-system/legacy';
 // and exposes the same saveToLibraryAsync / requestPermissionsAsync helpers.
 import * as MediaLibrary from 'expo-media-library/legacy';
 import * as Sharing from 'expo-sharing';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  Image,
   Linking,
   Modal,
   Pressable,
@@ -20,7 +19,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { CenterLoader, colors } from '../../components/ui';
+import { Image } from 'expo-image';
+import { CenterLoader, colors, ErrorState } from '../../components/ui';
 import CommentsSheet from '../../components/comments-sheet';
 import { api } from '../../lib/api';
 import { errorMessage, useAuth } from '../../lib/auth';
@@ -87,56 +87,48 @@ export default function MediaViewerScreen() {
   const [draftNote, setDraftNote] = useState('');
   const [exporting, setExporting] = useState<'gallery' | 'share' | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        let found: MediaRow | null = null;
-        if (mediaId) {
-          found = (await getLocalPhoto(mediaId)) as unknown as MediaRow | null;
-        } else if (remoteId && token) {
-          // Team photo: fetch a fresh signed URL from the server (needs network).
-          const photo = await api.getPhoto(token, remoteId);
-          found = {
-            id: photo.id,
-            projectId: photo.projectId,
-            userId: photo.userId,
-            kind: photo.kind as MediaKind,
-            durationMs: photo.durationMs,
-            localUri: photo.imageUrl,
-            capturedAt: photo.capturedAt,
-            syncedAt: photo.syncedAt,
-            createdAt: photo.syncedAt,
-            latitude: photo.latitude,
-            longitude: photo.longitude,
-            altitude: photo.altitude,
-            notes: photo.notes,
-            isRemote: true,
-          };
-        }
-        if (mounted && found) {
-          setRow(found);
-          const cached = await getCachedProject(found.projectId).catch(() => null);
-          if (mounted && cached) {
-            setProjectLabel(`${cached.code} · ${cached.name}`);
-          } else if (mounted) {
-            setProjectLabel(found.projectId);
-          }
-        }
-      } catch (err) {
-        if (mounted) {
-          setError(errorMessage(err));
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      let found: MediaRow | null = null;
+      if (mediaId) {
+        found = (await getLocalPhoto(mediaId)) as unknown as MediaRow | null;
+      } else if (remoteId && token) {
+        // Team photo: fetch a fresh signed URL from the server (needs network).
+        const photo = await api.getPhoto(token, remoteId);
+        found = {
+          id: photo.id,
+          projectId: photo.projectId,
+          userId: photo.userId,
+          kind: photo.kind as MediaKind,
+          durationMs: photo.durationMs,
+          localUri: photo.imageUrl,
+          capturedAt: photo.capturedAt,
+          syncedAt: photo.syncedAt,
+          createdAt: photo.syncedAt,
+          latitude: photo.latitude,
+          longitude: photo.longitude,
+          altitude: photo.altitude,
+          notes: photo.notes,
+          isRemote: true,
+        };
       }
-    })();
-    return () => {
-      mounted = false;
-    };
+      if (found) {
+        setRow(found);
+        const cached = await getCachedProject(found.projectId).catch(() => null);
+        setProjectLabel(cached ? `${cached.code} · ${cached.name}` : found.projectId);
+      }
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
   }, [mediaId, remoteId, token]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const isVideo = row?.kind === 'VIDEO';
   const location =
@@ -198,12 +190,18 @@ export default function MediaViewerScreen() {
   if (loading || !row) {
     return (
       <View style={styles.full}>
-        {loading ? <CenterLoader /> : null}
-        {!loading && !row ? (
-          <Text style={styles.missing}>
-            {error ?? 'Este medio ya no está disponible. Conéctate e inténtalo de nuevo.'}
-          </Text>
-        ) : null}
+        {loading ? (
+          <CenterLoader />
+        ) : (
+          <ErrorState
+            title={error ? 'No se pudo abrir el medio' : 'Medio no disponible'}
+            message={
+              error ??
+              'Este medio ya no está disponible. Revisa tu conexión e inténtalo de nuevo.'
+            }
+            onRetry={() => void load()}
+          />
+        )}
       </View>
     );
   }
@@ -315,7 +313,13 @@ export default function MediaViewerScreen() {
         {isVideo ? (
           <VideoPlayer uri={row.localUri} />
         ) : (
-          <Image source={{ uri: row.localUri }} style={styles.media} resizeMode="contain" />
+          <Image
+            source={row.localUri}
+            style={styles.media}
+            contentFit="contain"
+            transition={120}
+            cachePolicy="memory-disk"
+          />
         )}
       </View>
 
@@ -495,7 +499,6 @@ export default function MediaViewerScreen() {
 
 const styles = StyleSheet.create({
   full: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
-  missing: { color: colors.textMuted, fontSize: 15, textAlign: 'center', marginHorizontal: 24 },
   container: { flex: 1, backgroundColor: '#000' },
   mediaArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   media: { width: '100%', height: '100%' },

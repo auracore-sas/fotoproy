@@ -1,7 +1,7 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { CenterLoader, colors, ErrorBanner, Screen, textStyles } from '../../../components/ui';
+import { Banner, CenterLoader, colors, ErrorState, Screen, textStyles } from '../../../components/ui';
 import { SyncBar } from '../../../components/sync-indicator';
 import { api } from '../../../lib/api';
 import { errorMessage, useAuth } from '../../../lib/auth';
@@ -110,20 +110,26 @@ export default function ProjectDetailScreen() {
       {loading ? (
         <CenterLoader />
       ) : error ? (
-        <View style={styles.padded}>
-          <ErrorBanner message={error} />
-        </View>
+        <ErrorState
+          title="No se pudo cargar el proyecto"
+          message={error}
+          onRetry={() => void load()}
+        />
       ) : project ? (
         <ScrollView contentContainerStyle={styles.padded}>
           <SyncBar />
           {offline ? (
-            <View style={styles.offlineBanner}>
-              <Text style={styles.offlineBannerText}>
-                {online
-                  ? 'No se pudo conectar al servidor: mostrando datos guardados. Reintentando…'
-                  : 'Sin conexión: mostrando datos guardados. Puedes seguir tomando fotos.'}
-              </Text>
-            </View>
+            <Banner
+              tone="info"
+              icon="📶"
+              message={
+                online
+                  ? 'No se pudo conectar al servidor: mostrando datos guardados.'
+                  : 'Sin conexión: mostrando datos guardados. Puedes seguir tomando fotos.'
+              }
+              actionLabel="Reintentar ahora"
+              onAction={() => void refreshSilently()}
+            />
           ) : null}
           <Text style={textStyles.title}>{project.name}</Text>
           {project.description ? (
@@ -135,14 +141,6 @@ export default function ProjectDetailScreen() {
             <Row label="Cliente" value={project.clientName ?? '—'} />
             <Row label="Ubicación" value={location ?? '—'} />
             <Row label="Creado" value={formatDate(project.createdAt)} />
-          </View>
-
-          <View style={styles.comingSoon}>
-            <Text style={styles.comingSoonTitle}>🗺️ Planos y anclaje</Text>
-            <Text style={styles.comingSoonText}>
-              Sube el plano de la obra para anclar fotos sobre él (próximamente el toque para
-              anclar).
-            </Text>
           </View>
 
           <Pressable
@@ -255,16 +253,6 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     textAlign: 'right',
   },
-  comingSoon: {
-    marginTop: 24,
-    backgroundColor: '#EFF6FF',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-  },
-  comingSoonTitle: { fontSize: 15, fontWeight: '700', color: colors.primary },
-  comingSoonText: { fontSize: 14, color: colors.textMuted, marginTop: 6, lineHeight: 20 },
   captureButton: {
     marginTop: 16,
     flexDirection: 'row',
@@ -290,12 +278,4 @@ const styles = StyleSheet.create({
   galleryButtonIcon: { fontSize: 24, marginRight: 12 },
   galleryButtonTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
   galleryButtonSubtitle: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
-  offlineBanner: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 8,
-    marginBottom: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  offlineBannerText: { color: colors.primary, fontSize: 13, lineHeight: 18 },
 });

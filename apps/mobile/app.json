@@ -54,7 +54,8 @@
           "savePhotosPermission": "FotoProy guarda los medios con estampa en tu galería.",
           "isAccessMediaLocationEnabled": false
         }
-      ]
+      ],
+      "expo-image"
     ]
   }
 }
