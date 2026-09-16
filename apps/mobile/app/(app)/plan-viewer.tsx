@@ -64,12 +64,101 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/** Short local date+time for pin cards. */
+function formatDateTime(iso: string | null): string {
+  if (!iso) {
+    return '';
+  }
+  return new Date(iso).toLocaleString('es-EC', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 const MAX_SCALE = 8;
 const MIN_SCALE = 1;
 /** Counter-scale curve for map-style markers (keeps them ~constant on screen). */
 const SCALE_INPUT = [1, 1.5, 2, 3, 4, 6, 8];
 const INVERSE_OUTPUT = SCALE_INPUT.map((value) => 1 / value);
-const PIN_SIZE = 34;
+/** Markers live in screen space: constant visual size and touch target. */
+const MARKER_SIZE = 48;
+const PIN_VISUAL = 30;
+/** A tap this close (screen px) to a marker selects it — no pixel hunting. */
+const TAP_TOLERANCE = 44;
+
+interface MarkerProps {
+  pin: DrawnPin;
+  boxWidth: number;
+  boxHeight: number;
+  fitWidth: number;
+  fitHeight: number;
+  selected: boolean;
+  scaleAnim: Animated.Value;
+  offsetAnim: Animated.ValueXY;
+  onSelect: (pin: DrawnPin) => void;
+}
+
+/**
+ * Marker drawn in screen space (not inside the zoomed canvas). Its size and
+ * touch area stay constant at any zoom level — the previous in-canvas markers
+ * shrank with the counter-scale, which made them almost impossible to tap once
+ * the user zoomed in to place a photo.
+ */
+const Marker = React.memo(function Marker({
+  pin,
+  boxWidth,
+  boxHeight,
+  fitWidth,
+  fitHeight,
+  selected,
+  scaleAnim,
+  offsetAnim,
+  onSelect,
+}: MarkerProps) {
+  const position = useMemo(() => {
+    // Container coords of the anchor: canvas center + offset, then the canvas
+    // point (scaled about the canvas center).
+    const left = Animated.add(
+      Animated.add(boxWidth / 2, offsetAnim.x),
+      Animated.multiply((pin.x / 100) * fitWidth - fitWidth / 2, scaleAnim),
+    );
+    const top = Animated.add(
+      Animated.add(boxHeight / 2, offsetAnim.y),
+      Animated.multiply((pin.y / 100) * fitHeight - fitHeight / 2, scaleAnim),
+    );
+    return {
+      left: Animated.subtract(left, MARKER_SIZE / 2),
+      top: Animated.subtract(top, MARKER_SIZE / 2),
+    };
+  }, [boxWidth, boxHeight, fitWidth, fitHeight, pin.x, pin.y, scaleAnim, offsetAnim]);
+
+  return (
+    <Animated.View style={[styles.markerWrap, position]}>
+      <Pressable
+        onPress={() => onSelect(pin)}
+        hitSlop={6}
+        accessibilityRole="button"
+        accessibilityLabel={
+          pin.pending ? 'Anclaje pendiente de sincronizar' : 'Foto anclada: ver o quitar'
+        }
+        style={styles.markerPress}
+      >
+        <View
+          style={[
+            styles.pinBody,
+            pin.pending && styles.pinBodyPending,
+            selected && styles.pinBodySelected,
+          ]}
+        >
+          {pin.pending ? <Text style={styles.pinGlyph}>⏫</Text> : null}
+        </View>
+      </Pressable>
+    </Animated.View>
+  );
+});
 
 export default function PlanViewerScreen() {
   const router = useRouter();
@@ -116,7 +205,10 @@ export default function PlanViewerScreen() {
     Record<string, { uri: string | null; capturedAt: string }>
   >({});
   const [selected, setSelected] = useState<DrawnPin | null>(null);
+  const [listOpen, setListOpen] = useState(false);
   const momentumRef = useRef<number | null>(null);
+  /** Pins as drawn (read by the gesture handlers, which run outside React). */
+  const drawnPinsRef = useRef<DrawnPin[]>([]);
 
   const pinScale = useMemo(
     () =>
@@ -509,10 +601,33 @@ export default function PlanViewerScreen() {
           return;
         }
         lastTap.current = now;
-        // Single tap: while placing it positions the marker; otherwise it does
-        // nothing (anchoring is explicit — no more accidental pins).
         if (placingRef.current) {
           setPointerAt(toCanvas(evt.nativeEvent.pageX, evt.nativeEvent.pageY));
+          return;
+        }
+        // Generous hit area: a tap near a marker selects the closest one, so a
+        // zoomed-in plan no longer needs pixel-perfect aiming.
+        const tapped = toPercentage(toCanvas(evt.nativeEvent.pageX, evt.nativeEvent.pageY));
+        if (!tapped) {
+          return;
+        }
+        const currentFit = fitRef.current;
+        const s = scaleRef.current;
+        let best: DrawnPin | null = null;
+        let bestDistance = Infinity;
+        for (const pin of drawnPinsRef.current) {
+          const dx = ((pin.x - tapped.x) / 100) * currentFit.w * s;
+          const dy = ((pin.y - tapped.y) / 100) * currentFit.h * s;
+          const distance = Math.hypot(dx, dy);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            best = pin;
+          }
+        }
+        if (best && bestDistance <= TAP_TOLERANCE) {
+          setSelected(best);
+        } else {
+          setSelected(null); // tapping empty space dismisses the card
         }
       },
       onPanResponderTerminate: () => {
@@ -685,6 +800,10 @@ export default function PlanViewerScreen() {
   const pendingCount = drawnPins.filter((p) => p.pending).length;
   const pointerPct = toPercentage(pointer);
 
+  useEffect(() => {
+    drawnPinsRef.current = drawnPins;
+  }, [drawnPins]);
+
   if (loading) {
     return (
       <View style={styles.full}>
@@ -796,46 +915,14 @@ export default function PlanViewerScreen() {
                 }}
               />
 
-              {/* Pin markers (map-style: constant size while zooming) */}
-              <View style={StyleSheet.absoluteFill} pointerEvents={placing ? 'none' : 'box-none'}>
-                {drawnPins.map((pin) => (
-                  <Animated.View
-                    key={pin.id}
-                    style={[
-                      styles.pinWrap,
-                      {
-                        left: (pin.x / 100) * fit.w - PIN_SIZE / 2,
-                        top: (pin.y / 100) * fit.h - PIN_SIZE / 2,
-                        transform: [{ scale: pinScale }],
-                      },
-                    ]}
-                  >
-                    <Pressable
-                      onPress={() => setSelected(pin)}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        pin.pending ? 'Pin pendiente de sincronizar' : 'Ver foto anclada'
-                      }
-                      style={[
-                        styles.pinBody,
-                        pin.pending && styles.pinBodyPending,
-                        selected?.id === pin.id && styles.pinBodySelected,
-                      ]}
-                    >
-                      {pin.pending ? <Text style={styles.pinGlyph}>⏫</Text> : null}
-                    </Pressable>
-                  </Animated.View>
-                ))}
-              </View>
-
               {/* Placement pointer */}
               {placing ? (
                 <Animated.View
                   style={[
                     styles.pointerWrap,
                     {
-                      left: pointer.x - PIN_SIZE,
-                      top: pointer.y - PIN_SIZE,
+                      left: pointer.x - MARKER_SIZE,
+                      top: pointer.y - MARKER_SIZE,
                       transform: [{ scale: pinScale }],
                     },
                   ]}
@@ -854,6 +941,30 @@ export default function PlanViewerScreen() {
               <Text style={styles.canvasLoaderText}>Cargando plano…</Text>
             </View>
           ) : null}
+
+          {/*
+           * Anchored photos, drawn OUTSIDE the zoomed canvas so the marker and
+           * its touch area keep a constant size on screen (a counter-scaled
+           * marker inside the canvas shrank to a few pixels when zooming in).
+           */}
+          <View style={StyleSheet.absoluteFill} pointerEvents={placing ? 'none' : 'box-none'}>
+            {box
+              ? drawnPins.map((pin) => (
+                  <Marker
+                    key={pin.id}
+                    pin={pin}
+                    boxWidth={box.width}
+                    boxHeight={box.height}
+                    fitWidth={fit.w}
+                    fitHeight={fit.h}
+                    selected={selected?.id === pin.id}
+                    scaleAnim={scaleAnim}
+                    offsetAnim={offsetAnim}
+                    onSelect={setSelected}
+                  />
+                ))
+              : null}
+          </View>
 
           {/* Zoom controls */}
           <View style={styles.zoomControls}>
@@ -928,21 +1039,33 @@ export default function PlanViewerScreen() {
           </>
         ) : (
           <>
-            <Pressable
-              onPress={startPlacing}
-              style={styles.addButton}
-              accessibilityRole="button"
-              accessibilityLabel="Añadir foto al plano"
-            >
-              <Text style={styles.addButtonGlyph}>＋</Text>
-              <Text style={styles.addButtonText}>Añadir foto al plano</Text>
-            </Pressable>
+            <View style={styles.bottomActions}>
+              <Pressable
+                onPress={startPlacing}
+                style={styles.addButton}
+                accessibilityRole="button"
+                accessibilityLabel="Añadir foto al plano"
+              >
+                <Text style={styles.addButtonGlyph}>＋</Text>
+                <Text style={styles.addButtonText}>Añadir foto al plano</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setListOpen(true)}
+                disabled={drawnPins.length === 0}
+                style={[styles.listButton, drawnPins.length === 0 && styles.listButtonDisabled]}
+                accessibilityRole="button"
+                accessibilityLabel={`Ver las ${drawnPins.length} fotos ancladas`}
+              >
+                <Text style={styles.listButtonGlyph}>📍</Text>
+                <Text style={styles.listButtonText}>{drawnPins.length}</Text>
+              </Pressable>
+            </View>
             <Text style={styles.bottomHint}>
               {drawnPins.length === 0
                 ? 'Aún no hay fotos ancladas en este plano.'
                 : pendingCount > 0
                   ? `${drawnPins.length} anclada(s) · ${pendingCount} por sincronizar`
-                  : 'Toca una marca para ver la foto o quitarla del plano.'}
+                  : 'Toca una marca o usa 📍 para ver las fotos ancladas.'}
             </Text>
           </>
         )}
@@ -977,15 +1100,8 @@ export default function PlanViewerScreen() {
                       {selected.pending ? 'Anclaje pendiente' : 'Foto anclada'}
                     </Text>
                     <Text style={styles.previewMeta}>
-                      {selected.capturedAt
-                        ? new Date(selected.capturedAt).toLocaleString('es-EC', {
-                            day: '2-digit',
-                            month: 'short',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
-                        : `${selected.x.toFixed(1)}% · ${selected.y.toFixed(1)}%`}
+                      {formatDateTime(selected.capturedAt) ||
+                        `${selected.x.toFixed(1)}% · ${selected.y.toFixed(1)}%`}
                     </Text>
                     {selected.pending ? (
                       <Text style={styles.previewPending}>Se subirá al recuperar conexión.</Text>
@@ -1019,6 +1135,72 @@ export default function PlanViewerScreen() {
             ) : null}
           </Pressable>
         </Pressable>
+      </Modal>
+
+      {/* Anchored photos list — pick one without aiming at the map */}
+      <Modal
+        visible={listOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setListOpen(false)}
+      >
+        <View style={styles.sheetOverlay}>
+          <View style={[styles.sheet, styles.listSheet]}>
+            <View style={styles.sheetGrabber} />
+            <Text style={styles.sheetTitle}>Fotos ancladas ({drawnPins.length})</Text>
+            <Text style={styles.sheetHint}>
+              Toca una para verla o quitarla del plano. Las ámbar están pendientes de subir.
+            </Text>
+            <FlatList
+              data={drawnPins}
+              keyExtractor={(item) => item.id}
+              style={styles.listBody}
+              renderItem={({ item }) => (
+                <Pressable
+                  onPress={() => {
+                    setListOpen(false);
+                    setSelected(item);
+                  }}
+                  style={styles.pinRow}
+                  accessibilityRole="button"
+                >
+                  {item.thumbnailUri ? (
+                    <ExpoImage
+                      source={item.thumbnailUri}
+                      style={styles.pinRowThumb}
+                      contentFit="cover"
+                      recyclingKey={item.id}
+                    />
+                  ) : (
+                    <View style={[styles.pinRowThumb, styles.previewThumbEmpty]}>
+                      <Text style={styles.previewThumbGlyph}>📷</Text>
+                    </View>
+                  )}
+                  <View style={styles.pinRowInfo}>
+                    <Text style={styles.pinRowTitle}>
+                      {item.pending ? '⏫ Pendiente de subir' : 'Foto anclada'}
+                    </Text>
+                    <Text style={styles.pinRowMeta}>
+                      {formatDateTime(item.capturedAt)}
+                      {item.capturedAt ? ' · ' : ''}x {item.x.toFixed(1)}% · y {item.y.toFixed(1)}%
+                    </Text>
+                  </View>
+                  <Text style={styles.pinRowChevron}>›</Text>
+                </Pressable>
+              )}
+              ListEmptyComponent={
+                <Text style={styles.emptyMedia}>Aún no hay fotos ancladas en este plano.</Text>
+              }
+            />
+            <Pressable
+              onPress={() => setListOpen(false)}
+              style={styles.cancel}
+              accessibilityRole="button"
+            >
+              <Text style={styles.cancelText}>Cerrar</Text>
+            </Pressable>
+          </View>
+        </View>
       </Modal>
 
       {/* Photo picker (after fixing the point) */}
@@ -1151,11 +1333,18 @@ const styles = StyleSheet.create({
   canvasLoader: { position: 'absolute', alignItems: 'center', gap: 10 },
   canvasLoaderText: { fontFamily: fonts.sansMedium, color: '#D7DEEC', fontSize: 13 },
 
-  pinWrap: { position: 'absolute', width: PIN_SIZE, height: PIN_SIZE },
+  pinWrap: { position: 'absolute', width: PIN_VISUAL, height: PIN_VISUAL },
+  markerWrap: { position: 'absolute', width: MARKER_SIZE, height: MARKER_SIZE },
+  markerPress: {
+    width: MARKER_SIZE,
+    height: MARKER_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   pinBody: {
-    width: PIN_SIZE,
-    height: PIN_SIZE,
-    borderRadius: PIN_SIZE / 2,
+    width: PIN_VISUAL,
+    height: PIN_VISUAL,
+    borderRadius: PIN_VISUAL / 2,
     backgroundColor: colors.danger,
     borderWidth: 2.5,
     borderColor: '#FFFFFF',
@@ -1172,16 +1361,16 @@ const styles = StyleSheet.create({
 
   pointerWrap: {
     position: 'absolute',
-    width: PIN_SIZE * 2,
-    height: PIN_SIZE * 2,
+    width: MARKER_SIZE * 2,
+    height: MARKER_SIZE * 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
   pointerRing: {
     position: 'absolute',
-    width: PIN_SIZE * 2,
-    height: PIN_SIZE * 2,
-    borderRadius: PIN_SIZE,
+    width: MARKER_SIZE * 2,
+    height: MARKER_SIZE * 2,
+    borderRadius: MARKER_SIZE,
     borderWidth: 2,
     borderColor: colors.accent,
     backgroundColor: 'rgba(245,158,11,0.16)',
@@ -1226,7 +1415,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.08)',
   },
+  bottomActions: { flexDirection: 'row', gap: 10 },
   addButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1235,6 +1426,44 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: colors.primary,
   },
+  listButton: {
+    width: 72,
+    height: 52,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    gap: 1,
+  },
+  listButtonDisabled: { opacity: 0.45 },
+  listButtonGlyph: { fontSize: 14 },
+  listButtonText: { fontFamily: fonts.sansBold, color: '#FFFFFF', fontSize: 13 },
+
+  listSheet: { height: '76%' },
+  listBody: { flex: 1, marginTop: 12 },
+  pinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 10,
+    marginBottom: 8,
+  },
+  pinRowThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceAlt,
+  },
+  pinRowInfo: { flex: 1, gap: 2 },
+  pinRowTitle: { fontFamily: fonts.sansSemiBold, fontSize: 14, color: colors.ink },
+  pinRowMeta: { fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted },
+  pinRowChevron: { fontFamily: fonts.sansBold, fontSize: 18, color: colors.textFaint },
   addButtonGlyph: { color: '#FFFFFF', fontSize: 20, fontFamily: fonts.sansMedium, marginTop: -2 },
   addButtonText: { fontFamily: fonts.sansBold, color: '#FFFFFF', fontSize: 15.5 },
   bottomHint: {
