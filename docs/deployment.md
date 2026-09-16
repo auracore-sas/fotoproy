@@ -40,13 +40,13 @@ de base de datos/almacenamiento del panel, no en la aplicación de la API).
 
 ### 2.1 Decisiones
 
-| #   | Decisión              | Estado                                                                                          |
-| --- | --------------------- | ----------------------------------------------------------------------------------------------- |
-| 1   | Dónde corre la API    | ✅ **Dokploy** en servidor propio (§3).                                                         |
-| 2   | Dónde vive PostgreSQL | ✅ Servicio **PostgreSQL 16 ya existente** en Dokploy.                                          |
-| 3   | Dónde vive el storage | ✅ **MinIO ya existente** en Dokploy: `minio_storage:9000` interno, datos en `/srv/minio/data`. |
-| 4   | Dominio de la API     | ✅ **`fotoproy.apx5.com`** (etiquetas de Traefik en el compose).                                |
-| 5   | Dominio del MinIO     | ✅ API S3 **`minio-api.apx5.com`** (puerto 9000); la consola vive en `minio.apx5.com` (9001).   |
+| #   | Decisión              | Estado                                                                                        |
+| --- | --------------------- | --------------------------------------------------------------------------------------------- |
+| 1   | Dónde corre la API    | ✅ **Dokploy** en servidor propio (§3).                                                       |
+| 2   | Dónde vive PostgreSQL | ✅ Servicio **PostgreSQL 16 ya existente** en Dokploy.                                        |
+| 3   | Dónde vive el storage | ✅ **MinIO ya existente** en Dokploy: `minio:9000` interno, datos en `/srv/minio/data`.       |
+| 4   | Dominio de la API     | ✅ **`fotoproy.apx5.com`** (etiquetas de Traefik en el compose).                              |
+| 5   | Dominio del MinIO     | ✅ API S3 **`minio-api.apx5.com`** (puerto 9000); la consola vive en `minio.apx5.com` (9001). |
 
 ### 2.2 Credenciales y accesos
 
@@ -73,7 +73,7 @@ Dokploy construye la imagen desde el `Dockerfile` del repositorio y publica el
 contenedor detrás de **Traefik**. Tu MinIO y tu PostgreSQL **ya viven en
 `dokploy-network`**, así que la API se despliega como **Compose application**
 con `docker-compose.dokploy.yml`: ese archivo declara la red como `external` y
-mete la API en la misma red, de modo que `minio_storage` y el host del
+mete la API en la misma red, de modo que el alias del MinIO y el host del
 PostgreSQL resuelven. Un despliegue de tipo _Application_ (solo Dockerfile)
 crea su propia red aislada y no alcanza esos servicios.
 
@@ -113,7 +113,7 @@ PUBLIC_BASE_URL=https://fotoproy.apx5.com
 CORS_ORIGIN=https://fotoproy.apx5.com
 
 # MinIO: interno para la API, público (API S3) para firmar las URLs del teléfono
-STORAGE_ENDPOINT=http://minio_storage:9000
+STORAGE_ENDPOINT=http://minio:9000
 STORAGE_PUBLIC_ENDPOINT=https://minio-api.apx5.com
 STORAGE_REGION=us-east-1
 STORAGE_ACCESS_KEY_ID=<minio-access-key>
@@ -134,12 +134,15 @@ Tras cambiar variables hay que **redesplegar**: Dokploy no las lee en caliente.
 
 Tu compose de MinIO publica dos hosts de Traefik: la **consola** en
 `minio.apx5.com` (puerto 9001) y el **API S3** en `minio-api.apx5.com` (puerto
-9000), y el contenedor responde en `dokploy-network` como `minio_storage`
-(también `minio`). Eso se traduce en:
+9000), y el contenedor responde en `dokploy-network` con los alias
+`minio_storage`, `minio` y `plane-minio`. **Usa `minio`** en
+`STORAGE_ENDPOINT`: MinIO valida el header `Host` y rechaza con
+`400 InvalidRequest (invalid hostname)` cualquier hostname con **guion bajo**
+(`minio_storage`), aunque resuelva bien por DNS. Eso se traduce en:
 
 | Rol                 | Valor                                                | Por qué                                                                                                                                  |
 | ------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| API → MinIO         | `STORAGE_ENDPOINT=http://minio_storage:9000`         | Tráfico interno por la red de Docker, sin salir a Internet.                                                                              |
+| API → MinIO         | `STORAGE_ENDPOINT=http://minio:9000`                 | Tráfico interno por la red de Docker. **Alias sin guion bajo**: MinIO rechaza los `Host` inválidos.                                      |
 | Teléfono → MinIO    | `STORAGE_PUBLIC_ENDPOINT=https://minio-api.apx5.com` | El **API S3**, no la consola: una pre-signed URL solo vale para el host con el que se firmó y este es el que el teléfono puede alcanzar. |
 | Consola (navegador) | `https://minio.apx5.com`                             | Solo para administrar el MinIO; no se usa en la configuración de la API.                                                                 |
 
@@ -232,12 +235,19 @@ Diagnóstico rápido: si la API no arranca o no conecta, revisa (a) que el
 container esté en `dokploy-network` (el compose lo declara), (b) la URL interna
 de PostgreSQL, (c) los logs de `docker logs fotoproy-api`.
 
-Si `/health` devuelve `storage: "down"`, el contenedor no resuelve el host
-interno del MinIO: revisa que el compose de la API y el de MinIO compartan
-`dokploy-network` y, como respaldo inmediato, apunta `STORAGE_ENDPOINT` al
-endpoint **público** (`https://minio-api.apx5.com`): funciona igual porque sale
-por Traefik y solo cuesta un salto de red extra. El log de arranque ya lo dice
-con el nombre del host (`Cannot create bucket "fotoproy" at http://…`).
+Si `/health` devuelve `storage: "down"`, lee el mensaje del log de arranque
+(`Cannot create bucket "fotoproy" at http://…`):
+
+| Mensaje                                        | Causa y arreglo                                                                                      |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `Invalid Request (invalid hostname)`           | **El alias del MinIO lleva guion bajo** (`minio_storage`). Usa `STORAGE_ENDPOINT=http://minio:9000`. |
+| `getaddrinfo EAI_AGAIN` / `ENOTFOUND`          | El contenedor no está en `dokploy-network` (revisa la red de ambos servicios) o el alias no existe.  |
+| `ECONNREFUSED` / timeout                       | El nombre resuelve pero nada escucha: puerto equivocado (MinIO S3 = 9000, consola = 9001).           |
+| `SignatureDoesNotMatch` / `InvalidAccessKeyId` | Credenciales mal copiadas (espacio o salto de línea al pegarlas en Dokploy).                         |
+
+Como respaldo inmediato, apuntar `STORAGE_ENDPOINT` al endpoint **público**
+(`https://minio-api.apx5.com`) funciona siempre porque sale por Traefik; solo
+cuesta un salto de red extra.
 
 ---
 
@@ -361,7 +371,7 @@ de sincronización y los planos offline no dependen del despliegue.
       este runbook.
 - [x] Repositorio remoto en GitHub (`auracore-sas/fotoproy`) con `main` y tags.
 - [x] Soporte de **endpoint interno + público** de storage (MinIO de Dokploy).
-- [x] MinIO identificado: `minio_storage:9000` interno y API S3 público en
+- [x] MinIO identificado: `minio:9000` interno y API S3 público en
       `minio-api.apx5.com`; `docker-compose.dokploy.yml` para la Compose
       application.
 - [x] Claves de MinIO y URL interna del PostgreSQL cargadas en Dokploy: el
@@ -371,5 +381,5 @@ de sincronización y los planos offline no dependen del despliegue.
 - [~] Despliegue verificado: `https://fotoproy.apx5.com/health` responde `ok`
   con `db: up`, el bucket `fotoproy` existe y el camino firmado
   (PUT/GET) responde 200. Falta confirmar `storage: up` tras redesplegar
-  (la API debe alcanzar `minio_storage:9000`) y la subida desde el teléfono.
+  (la API debe alcanzar `minio:9000`) y la subida desde el teléfono.
 - [ ] CI de despliegue (opcional): hoy el release es `git push` + Deploy.

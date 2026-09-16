@@ -197,4 +197,5 @@ Ver tareas F3.0–F3.6 del ROADMAP. **Implementado** (backend a55d312; móvil 03
 - [ ] Toda query de la API filtra por `organizationId` (org-scoping).
 - [ ] En la **vista web pública** (`/s/:token`) nunca apuntar a URLs del storage: Chrome asciende a HTTPS los subrecursos HTTP privados y el bucket local es HTTP. Los medios van por el proxy `GET /s/:token/media/:photoId`.
 - [ ] En Docker/Dokploy el storage necesita **dos endpoints**: `STORAGE_ENDPOINT` interno (lo usa la API) y `STORAGE_PUBLIC_ENDPOINT` público (firma de las URLs que usa el teléfono). Una pre-signed URL **solo** vale para el host con el que se firmó; si el teléfono no puede subir, revisar ese valor antes que el código.
+- [ ] El hostname interno del storage **no puede llevar guion bajo**: MinIO valida el header `Host` y responde `400 InvalidRequest (invalid hostname)` a nombres como `minio_storage` aunque Docker los resuelva. Usar `minio`, `minio-api`, etc.
 - [ ] En F1+, features nativas (PDF, etc.) requieren **dev client / EAS build**, no Expo Go — planificar con el spike F3.0.
