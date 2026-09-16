@@ -41,3 +41,6 @@ coverage/
 
 # Prisma
 packages/database/prisma/*.db
+
+# Output of the production check script (contains test ids)
+production-check.json

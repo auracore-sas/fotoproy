@@ -244,6 +244,31 @@ otra aplicación. Las migraciones las aplica el contenedor al arrancar.
 3. Crear un enlace compartido (_Compartir avance_) y abrirlo **desde datos
    móviles, fuera de la WiFi de la oficina**. Ese es el DoD de F2.4.
 
+#### Verificación automática (recomendada después de cada despliegue)
+
+`pnpm check:prod` recorre el flujo completo contra el entorno indicado: crea una
+organización de prueba (nombre `Deploy check <timestamp>`), un proyecto, sube una
+foto por la **URL firmada** y comprueba la estampa, el thumbnail y la página web
+pública. Deja los identificadores en `production-check.json`.
+
+```bash
+API=https://fotoproy.apx5.com pnpm check:prod
+
+# Al terminar, borra todo lo que creó (proyecto en cascada + objetos del bucket):
+API=https://fotoproy.apx5.com FILE=production-check.json \
+  STORAGE_ENDPOINT=https://minio-api.apx5.com STORAGE_BUCKET=fotoproy \
+  STORAGE_ACCESS_KEY_ID=<key> STORAGE_SECRET_ACCESS_KEY=<secret> \
+  pnpm check:prod:cleanup
+```
+
+> ⚠️ **Escribe datos reales** (una organización y un usuario de prueba). El
+> script de limpieza borra el proyecto y los objetos, pero la organización y el
+> usuario quedan; bórralos con:
+>
+> ```sql
+> DELETE FROM organizations WHERE "legalName" LIKE 'Deploy check %';
+> ```
+
 Diagnóstico rápido: si la API no arranca o no conecta, revisa (a) que el
 container esté en `dokploy-network` (el compose lo declara), (b) la URL interna
 de PostgreSQL, (c) los logs de `docker logs fotoproy-api`.
@@ -397,7 +422,10 @@ de sincronización y los planos offline no dependen del despliegue.
       `Signed URLs use https://minio-api.apx5.com`, el camino firmado (PUT/GET)
       responde 200 y la página pública con token inválido devuelve la página
       404 correcta (HTML) o JSON según `Accept`.
-- [ ] Falta el DoD de negocio: un **enlace con fotos reales abierto desde fuera
-      de la LAN** (necesita datos, p. ej. la prueba end-to-end o la subida desde
-      el móvil tras el build de F4.6).
+- [x] **Prueba end-to-end contra producción (2026-09-16)**: organización,
+      proyecto, subida firmada (48 KB), foto, estampa quemada, thumbnail y
+      enlace de solo lectura abierto en un navegador real desde fuera de la red
+      — con los datos de prueba borrados al terminar (`pnpm check:prod` +
+      `pnpm check:prod:cleanup`).
+- [ ] Falta la subida desde el **teléfono** contra producción (build de F4.6).
 - [ ] CI de despliegue (opcional): hoy el release es `git push` + Deploy.

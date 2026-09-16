@@ -228,12 +228,16 @@ export function buildStampSvg(
     shortText([authorName, photo.notes].filter(Boolean).join(' · '), 160) || 'FotoProy',
   );
 
+  // Font list on purpose: the container ships DejaVu and Liberation fonts (see
+  // Dockerfile). Without an installed font librsvg draws placeholder boxes
+  // instead of the stamp text.
+  const font = "Helvetica, Arial, 'Liberation Sans', 'DejaVu Sans', sans-serif";
   const svg =
     `<svg width="${width}" height="${bandHeight}" xmlns="http://www.w3.org/2000/svg">` +
     `<rect width="100%" height="100%" fill="rgba(0,0,0,0.60)"/>` +
-    `<text x="${padX}" y="${Math.round(bandHeight * 0.42)}" fill="#ffffff" font-family="Helvetica, Arial, sans-serif" font-size="${fs1}" font-weight="bold">${line1}</text>` +
-    `<text x="${padX}" y="${Math.round(bandHeight * 0.72)}" fill="#ffd23f" font-family="Helvetica, Arial, sans-serif" font-size="${fs2}">${line2}</text>` +
-    `<text x="${padX}" y="${Math.round(bandHeight * 0.96)}" fill="#e8e8e8" font-family="Helvetica, Arial, sans-serif" font-size="${fs3}">${line3}</text>` +
+    `<text x="${padX}" y="${Math.round(bandHeight * 0.42)}" fill="#ffffff" font-family="${font}" font-size="${fs1}" font-weight="bold">${line1}</text>` +
+    `<text x="${padX}" y="${Math.round(bandHeight * 0.72)}" fill="#ffd23f" font-family="${font}" font-size="${fs2}">${line2}</text>` +
+    `<text x="${padX}" y="${Math.round(bandHeight * 0.96)}" fill="#e8e8e8" font-family="${font}" font-size="${fs3}">${line3}</text>` +
     `</svg>`;
   return Buffer.from(svg);
 }

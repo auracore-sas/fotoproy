@@ -68,8 +68,16 @@ ENV PNPM_HOME=/pnpm
 ENV PATH=/pnpm:$PATH
 
 # openssl: the Prisma query engine needs libssl; debian slim does not ship it.
+# fontconfig + fonts: the evidence stamp is an SVG composited with sharp, and
+# librsvg renders text as empty boxes when no font is installed (the stamp would
+# be unreadable in production even though it looks fine on a developer machine).
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl dumb-init \
+  && apt-get install -y --no-install-recommends \
+    openssl \
+    dumb-init \
+    fontconfig \
+    fonts-dejavu-core \
+    fonts-liberation \
   && rm -rf /var/lib/apt/lists/* \
   && npm install -g pnpm@11.24.0
 
