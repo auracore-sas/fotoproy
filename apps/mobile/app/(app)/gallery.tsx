@@ -1,17 +1,18 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { getThumbnailAsync } from 'expo-video-thumbnails';
+import { Image } from 'expo-image';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Image,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { CenterLoader, colors, ErrorBanner, Screen } from '../../components/ui';
+import { Banner, CenterLoader, colors, EmptyState, ErrorState, Screen } from '../../components/ui';
 import { SyncBar } from '../../components/sync-indicator';
 import { listLocalPins } from '../../lib/db';
 import { listMergedGallery, refreshRemoteGallery } from '../../lib/remote-gallery';
@@ -70,6 +71,72 @@ function Chip({
   );
 }
 
+interface MediaTileProps {
+  item: MediaRow;
+  thumbUri: string | null;
+  badge: ItemSyncState | 'REMOTE' | null;
+  onOpen: (item: MediaRow) => void;
+}
+
+/**
+ * Memoized square tile. Kept outside the screen so scrolling and filter
+ * changes don't re-render (or re-decode) the whole grid (F4.3).
+ */
+const MediaTile = React.memo(function MediaTile({
+  item,
+  thumbUri,
+  badge,
+  onOpen,
+}: MediaTileProps) {
+  const isVideo = item.kind === 'VIDEO';
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={isVideo ? 'Abrir video' : 'Abrir foto'}
+      onPress={() => onOpen(item)}
+      style={({ pressed }) => [styles.tile, pressed && { opacity: 0.8 }]}
+    >
+      {thumbUri ? (
+        <Image
+          source={thumbUri}
+          style={styles.tileImage}
+          contentFit="cover"
+          transition={120}
+          cachePolicy="memory-disk"
+          recyclingKey={item.id}
+        />
+      ) : (
+        <View style={[styles.tileImage, styles.tilePlaceholder]}>
+          <Text style={styles.videoGlyph}>{isVideo ? '▶' : '📷'}</Text>
+        </View>
+      )}
+      {isVideo ? (
+        <View style={styles.videoBadge} pointerEvents="none">
+          <Text style={styles.videoIcon}>▶</Text>
+          <Text style={styles.videoDuration}>{formatDuration(item.durationMs)}</Text>
+        </View>
+      ) : null}
+      {badge === 'REMOTE' ? (
+        <View pointerEvents="none" style={styles.syncBadge} accessibilityLabel="En línea (equipo)">
+          <Text style={styles.syncBadgeIcon}>☁</Text>
+        </View>
+      ) : badge ? (
+        <View
+          pointerEvents="none"
+          accessibilityLabel={badge === 'FAILED' ? 'Error al sincronizar' : 'Por sincronizar'}
+          style={[styles.syncBadge, badge === 'FAILED' && styles.syncBadgeError]}
+        >
+          {badge === 'UPLOADING' ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.syncBadgeIcon}>{badge === 'FAILED' ? '⚠' : '⏫'}</Text>
+          )}
+        </View>
+      ) : null}
+    </Pressable>
+  );
+});
+
 export default function GalleryScreen() {
   const router = useRouter();
   const { projectId } = useLocalSearchParams<{ projectId: string }>();
@@ -77,9 +144,12 @@ export default function GalleryScreen() {
   const { online, items: queueItems } = useSync();
   const [items, setItems] = useState<MediaRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoThumbs, setVideoThumbs] = useState<Record<string, string>>({});
   const thumbCache = useRef<Record<string, string>>({});
+  // Only the first load blocks; focus reloads keep the current grid visible.
+  const loadedOnceRef = useRef(false);
 
   // Filters (F3.4): author · date · plan.
   const [author, setAuthor] = useState<AuthorFilter>('all');
@@ -92,7 +162,9 @@ export default function GalleryScreen() {
     if (!projectId) {
       return;
     }
-    setLoading(true);
+    if (!loadedOnceRef.current) {
+      setLoading(true);
+    }
     try {
       const rows = await listMergedGallery(projectId);
       setItems(rows as unknown as MediaRow[]);
@@ -100,9 +172,32 @@ export default function GalleryScreen() {
     } catch {
       setError('No se pudieron cargar los medios guardados.');
     } finally {
+      loadedOnceRef.current = true;
       setLoading(false);
     }
   }, [projectId]);
+
+  /** Pull-to-refresh: local reload (+ team refresh when online). */
+  const refreshAll = useCallback(async () => {
+    if (!projectId) {
+      return;
+    }
+    setRefreshing(true);
+    try {
+      if (token && online) {
+        await refreshRemoteGallery(token, projectId).catch(() => undefined);
+      }
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [projectId, token, online, load]);
+
+  const clearFilters = useCallback(() => {
+    setAuthor('all');
+    setDays(0);
+    setPlanId(null);
+  }, []);
 
   // Reload on focus; also fetch the plan list once for the plan filter.
   useFocusEffect(
@@ -219,87 +314,84 @@ export default function GalleryScreen() {
     });
   }, [items, author, days, planId, pinnedIds]);
 
-  const openMedia = (item: MediaRow) => {
-    if (!item.isRemote) {
-      router.push({ pathname: '/media-viewer', params: { mediaId: item.id } });
-      return;
-    }
-    router.push({ pathname: '/media-viewer', params: { remoteId: item.id } });
-  };
+  const openMedia = useCallback(
+    (item: MediaRow) => {
+      if (!item.isRemote) {
+        router.push({ pathname: '/media-viewer', params: { mediaId: item.id } });
+        return;
+      }
+      router.push({ pathname: '/media-viewer', params: { remoteId: item.id } });
+    },
+    [router],
+  );
 
-  const tileThumb = (item: MediaRow): string | null => {
-    if (item.isRemote) {
-      return item.thumbLocalUri ?? null;
-    }
-    if (item.kind === 'VIDEO') {
-      return videoThumbs[item.id] ?? null;
-    }
-    return item.localUri;
-  };
+  const tileThumb = useCallback(
+    (item: MediaRow): string | null => {
+      if (item.isRemote) {
+        return item.thumbLocalUri ?? null;
+      }
+      if (item.kind === 'VIDEO') {
+        return videoThumbs[item.id] ?? null;
+      }
+      return item.localUri;
+    },
+    [videoThumbs],
+  );
 
-  const renderItem = ({ item }: { item: MediaRow }) => {
-    const isVideo = item.kind === 'VIDEO';
-    const thumbUri = tileThumb(item);
-    const queueState: ItemSyncState | undefined = item.isRemote ? undefined : queueItems[item.id];
-    const badge =
-      !item.isRemote && (queueState || item.syncedAt == null)
-        ? (queueState ?? 'PENDING')
-        : item.isRemote
-          ? 'REMOTE'
-          : null;
-    return (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={isVideo ? 'Abrir video' : 'Abrir foto'}
-        onPress={() => openMedia(item)}
-        style={({ pressed }) => [styles.tile, pressed && { opacity: 0.8 }]}
-      >
-        {thumbUri ? (
-          <Image source={{ uri: thumbUri }} style={styles.tileImage} resizeMode="cover" />
-        ) : (
-          <View style={[styles.tileImage, styles.tilePlaceholder]}>
-            <Text style={styles.videoGlyph}>{isVideo ? '▶' : '📷'}</Text>
-          </View>
-        )}
-        {isVideo ? (
-          <View style={styles.videoBadge} pointerEvents="none">
-            <Text style={styles.videoIcon}>▶</Text>
-            <Text style={styles.videoDuration}>{formatDuration(item.durationMs)}</Text>
-          </View>
-        ) : null}
-        {badge === 'REMOTE' ? (
-          <View
-            pointerEvents="none"
-            style={styles.syncBadge}
-            accessibilityLabel="En línea (equipo)"
-          >
-            <Text style={styles.syncBadgeIcon}>☁</Text>
-          </View>
-        ) : badge ? (
-          <View
-            pointerEvents="none"
-            accessibilityLabel={badge === 'FAILED' ? 'Error al sincronizar' : 'Por sincronizar'}
-            style={[styles.syncBadge, badge === 'FAILED' && styles.syncBadgeError]}
-          >
-            {badge === 'UPLOADING' ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.syncBadgeIcon}>{badge === 'FAILED' ? '⚠' : '⏫'}</Text>
-            )}
-          </View>
-        ) : null}
-      </Pressable>
-    );
-  };
+  const renderItem = useCallback(
+    ({ item }: { item: MediaRow }) => {
+      const queueState: ItemSyncState | undefined = item.isRemote
+        ? undefined
+        : queueItems[item.id];
+      const badge: ItemSyncState | 'REMOTE' | null =
+        !item.isRemote && (queueState || item.syncedAt == null)
+          ? (queueState ?? 'PENDING')
+          : item.isRemote
+            ? 'REMOTE'
+            : null;
+      return (
+        <MediaTile item={item} thumbUri={tileThumb(item)} badge={badge} onOpen={openMedia} />
+      );
+    },
+    [queueItems, tileThumb, openMedia],
+  );
 
   if (loading) {
     return <CenterLoader />;
   }
 
+  if (error && items.length === 0) {
+    return (
+      <Screen>
+        <ErrorState
+          title="No se pudieron cargar los medios"
+          message={error}
+          onRetry={() => void load()}
+        />
+      </Screen>
+    );
+  }
+
   return (
     <Screen>
-      <ErrorBanner message={error} />
-      <SyncBar />
+      <View style={styles.bannerArea}>
+        <SyncBar />
+        {error ? (
+          <Banner
+            tone="error"
+            message={error}
+            actionLabel="Reintentar"
+            onAction={() => void load()}
+          />
+        ) : null}
+        {!online ? (
+          <Banner
+            tone="info"
+            icon="✈️"
+            message="Sin conexión · mostrando lo guardado en este equipo. Los medios del equipo vuelven al reconectar."
+          />
+        ) : null}
+      </View>
 
       {/* Filters */}
       <ScrollView
@@ -350,17 +442,30 @@ export default function GalleryScreen() {
         renderItem={renderItem}
         numColumns={3}
         contentContainerStyle={styles.list}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => void refreshAll()} />
+        }
+        initialNumToRender={15}
+        maxToRenderPerBatch={12}
+        updateCellsBatchingPeriod={50}
+        windowSize={5}
+        removeClippedSubviews
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>
-              {items.length === 0 ? 'Sin medios guardados' : 'Sin resultados con estos filtros'}
-            </Text>
-            <Text style={styles.emptyText}>
-              {items.length === 0
-                ? 'Toma fotos o videos con la cámara y aparecerán aquí, incluso sin conexión. Los medios del equipo se muestran al abrir con internet.'
-                : 'Prueba quitar algún filtro (autor, fecha o plano).'}
-            </Text>
-          </View>
+          <EmptyState
+            icon={items.length === 0 ? '📷' : '🔍'}
+            title={items.length === 0 ? 'Sin medios guardados' : 'Sin resultados con estos filtros'}
+            text={
+              items.length === 0
+                ? 'Toma fotos o videos con la cámara y aparecerán aquí, incluso sin conexión.'
+                : 'Prueba quitar algún filtro de autor, fecha o plano.'
+            }
+            actionLabel={items.length === 0 ? 'Tomar foto' : 'Quitar filtros'}
+            onAction={
+              items.length === 0
+                ? () => router.push({ pathname: '/capture', params: { projectId } })
+                : clearFilters
+            }
+          />
         }
       />
     </Screen>
@@ -368,6 +473,7 @@ export default function GalleryScreen() {
 }
 
 const styles = StyleSheet.create({
+  bannerArea: { paddingHorizontal: 10 },
   filterRow: { paddingHorizontal: 10, paddingVertical: 6, gap: 8, alignItems: 'center' },
   filterLabel: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
   chip: {
@@ -422,13 +528,4 @@ const styles = StyleSheet.create({
   },
   syncBadgeIcon: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
   syncBadgeError: { backgroundColor: '#DC2626' },
-  empty: { alignItems: 'center', paddingTop: 90, paddingHorizontal: 28 },
-  emptyTitle: { fontSize: 17, fontWeight: '600', color: colors.text, textAlign: 'center' },
-  emptyText: {
-    fontSize: 14,
-    color: colors.textMuted,
-    marginTop: 6,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
 });

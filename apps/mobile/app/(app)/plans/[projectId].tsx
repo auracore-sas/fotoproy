@@ -1,11 +1,12 @@
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
-import React, { useCallback, useState } from 'react';
+import { Image } from 'expo-image';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
-  Image,
+  Linking,
   Modal,
   Pressable,
   RefreshControl,
@@ -14,7 +15,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Button, CenterLoader, colors, ErrorBanner, Screen } from '../../../components/ui';
+import { Banner, Button, CenterLoader, colors, EmptyState, ErrorState, Screen } from '../../../components/ui';
+import { SyncBar } from '../../../components/sync-indicator';
 import { api } from '../../../lib/api';
 import { errorMessage, useAuth } from '../../../lib/auth';
 import { generateId } from '../../../lib/id';
@@ -44,6 +46,8 @@ export default function PlansScreen() {
   const [title, setTitle] = useState('');
   const [uploadProgress, setUploadProgress] = useState<number | null>(null); // 0..1
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // Only the first load blocks; focus reloads keep the current list visible.
+  const loadedOnceRef = useRef(false);
 
   const load = useCallback(
     async (asRefresh = false) => {
@@ -52,7 +56,7 @@ export default function PlansScreen() {
       }
       if (asRefresh) {
         setRefreshing(true);
-      } else {
+      } else if (!loadedOnceRef.current) {
         setLoading(true);
       }
       setError(null);
@@ -62,6 +66,7 @@ export default function PlansScreen() {
       } catch (err) {
         setError(errorMessage(err));
       } finally {
+        loadedOnceRef.current = true;
         setLoading(false);
         setRefreshing(false);
       }
@@ -83,9 +88,18 @@ export default function PlansScreen() {
     setUploadError(null);
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permiso de galería', 'Activa el permiso de fotos para elegir el plano.', [
-        { text: 'Cancelar', style: 'cancel' },
-      ]);
+      Alert.alert(
+        'Permiso de galería',
+        permission.canAskAgain
+          ? 'Activa el permiso de fotos para elegir el plano.'
+          : 'El permiso de fotos está bloqueado en este dispositivo. Actívalo desde los ajustes.',
+        permission.canAskAgain
+          ? [{ text: 'Entendido' }]
+          : [
+              { text: 'Cancelar', style: 'cancel' },
+              { text: 'Abrir ajustes', onPress: () => void Linking.openSettings() },
+            ],
+      );
       return;
     }
     const picked = await ImagePicker.launchImageLibraryAsync({
@@ -154,35 +168,43 @@ export default function PlansScreen() {
         .catch(reject);
     });
 
-  const openPlan = (plan: Plan) => {
-    router.push({ pathname: '/plan-viewer', params: { planId: plan.id } });
-  };
-
-  const renderItem = ({ item }: { item: Plan }) => (
-    <Pressable
-      accessibilityRole="button"
-      onPress={() => openPlan(item)}
-      style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
-    >
-      {item.thumbnailUrl ? (
-        <Image source={{ uri: item.thumbnailUrl }} style={styles.thumb} resizeMode="cover" />
-      ) : (
-        <View style={[styles.thumb, styles.thumbPlaceholder]}>
-          <Text style={styles.thumbGlyph}>{item.planKind === 'PDF' ? '📄' : '🗺️'}</Text>
+  const renderItem = useCallback(
+    ({ item }: { item: Plan }) => (
+      <Pressable
+        accessibilityRole="button"
+        onPress={() =>
+          router.push({ pathname: '/plan-viewer', params: { planId: item.id } })
+        }
+        style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
+      >
+        {item.thumbnailUrl ? (
+          <Image
+            source={item.thumbnailUrl}
+            style={styles.thumb}
+            contentFit="cover"
+            transition={120}
+            cachePolicy="memory-disk"
+            recyclingKey={item.id}
+          />
+        ) : (
+          <View style={[styles.thumb, styles.thumbPlaceholder]}>
+            <Text style={styles.thumbGlyph}>{item.planKind === 'PDF' ? '📄' : '🗺️'}</Text>
+          </View>
+        )}
+        <View style={styles.cardBody}>
+          <Text style={styles.title} numberOfLines={2}>
+            {item.title}
+          </Text>
+          <Text style={styles.meta}>
+            {formatDate(item.createdAt)}
+            {item.pageCount > 1 ? ` · ${item.pageCount} páginas` : ''}
+            {item.planKind === 'PDF' ? ' · PDF' : ''}
+          </Text>
         </View>
-      )}
-      <View style={styles.cardBody}>
-        <Text style={styles.title} numberOfLines={2}>
-          {item.title}
-        </Text>
-        <Text style={styles.meta}>
-          {formatDate(item.createdAt)}
-          {item.pageCount > 1 ? ` · ${item.pageCount} páginas` : ''}
-          {item.planKind === 'PDF' ? ' · PDF' : ''}
-        </Text>
-      </View>
-      <Text style={styles.chevron}>›</Text>
-    </Pressable>
+        <Text style={styles.chevron}>›</Text>
+      </Pressable>
+    ),
+    [router],
   );
 
   if (loading) {
@@ -203,24 +225,48 @@ export default function PlansScreen() {
             : undefined,
         }}
       />
-      <ErrorBanner message={error} />
-      <FlatList
-        data={plans}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>Sin planos todavía</Text>
-            <Text style={styles.emptyText}>
-              {canUpload(user?.role)
-                ? 'Sube el plano o mapa de la obra para anclar fotos sobre él.'
-                : 'Pide a un administrador o supervisor que suba el plano de la obra.'}
-            </Text>
-          </View>
-        }
-      />
+      <View style={styles.bannerArea}>
+        <SyncBar />
+        {error && plans.length > 0 ? (
+          <Banner
+            tone="error"
+            message={error}
+            actionLabel="Reintentar"
+            onAction={() => void load()}
+          />
+        ) : null}
+      </View>
+      {error && plans.length === 0 ? (
+        <ErrorState
+          title="No se pudieron cargar los planos"
+          message={error}
+          onRetry={() => void load()}
+        />
+      ) : (
+        <FlatList
+          data={plans}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.list}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          ListEmptyComponent={
+            <EmptyState
+              icon="🗺️"
+              title="Sin planos todavía"
+              text={
+                canUpload(user?.role)
+                  ? 'Sube el plano o mapa de la obra para anclar fotos sobre él.'
+                  : 'Pide a un administrador o supervisor que suba el plano de la obra.'
+              }
+              actionLabel={canUpload(user?.role) ? 'Subir plano' : undefined}
+              onAction={canUpload(user?.role) ? () => setUploadOpen(true) : undefined}
+            />
+          }
+        />
+      )}
 
       {/* Upload sheet */}
       <Modal
@@ -272,6 +318,7 @@ export default function PlansScreen() {
 }
 
 const styles = StyleSheet.create({
+  bannerArea: { paddingHorizontal: 16, paddingTop: 8 },
   list: { padding: 16 },
   card: {
     flexDirection: 'row',
@@ -291,9 +338,6 @@ const styles = StyleSheet.create({
   meta: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
   chevron: { fontSize: 24, color: colors.textMuted },
   uploadHeader: { color: colors.primary, fontSize: 15, fontWeight: '700' },
-  empty: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 24 },
-  emptyTitle: { fontSize: 17, fontWeight: '600', color: colors.text },
-  emptyText: { fontSize: 14, color: colors.textMuted, marginTop: 6, textAlign: 'center' },
   sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.bg,
