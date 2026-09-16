@@ -1,6 +1,6 @@
 import { Redirect, Stack } from 'expo-router';
 import React from 'react';
-import { CenterLoader } from '../../components/ui';
+import { CenterLoader, colors, fonts } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 
 export default function AppLayout() {
@@ -14,12 +14,15 @@ export default function AppLayout() {
   return (
     <Stack
       screenOptions={{
-        headerTintColor: '#1D4ED8',
-        headerStyle: { backgroundColor: '#FFFFFF' },
+        headerTintColor: colors.primary,
+        headerStyle: { backgroundColor: colors.bg },
         headerShadowVisible: false,
+        headerTitleStyle: { fontFamily: fonts.display, fontSize: 17, color: colors.ink },
+        headerBackButtonDisplayMode: 'minimal',
+        contentStyle: { backgroundColor: colors.bg },
       }}
     >
-      <Stack.Screen name="index" options={{ title: 'Proyectos' }} />
+      <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="capture" options={{ headerShown: false }} />
       <Stack.Screen name="gallery" options={{ title: 'Galería' }} />
       <Stack.Screen name="media-viewer" options={{ headerShown: false }} />

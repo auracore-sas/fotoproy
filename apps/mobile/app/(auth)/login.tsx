@@ -1,7 +1,18 @@
 import { Link } from 'expo-router';
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Button, colors, ErrorBanner, Field, Screen, textStyles } from '../../components/ui';
+import {
+  BrandMark,
+  Button,
+  colors,
+  ErrorBanner,
+  Field,
+  fonts,
+  radius,
+  elevations,
+  Screen,
+  textStyles,
+} from '../../components/ui';
 import { errorMessage, useAuth } from '../../lib/auth';
 
 export default function LoginScreen() {
@@ -31,38 +42,46 @@ export default function LoginScreen() {
 
   return (
     <Screen>
+      {/* Atmospheric backdrop: blueprint glow */}
+      <View pointerEvents="none" style={styles.glow} />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <View style={styles.header}>
-            <Text style={styles.logo}>📸 FotoProy</Text>
-            <Text style={textStyles.subtitle}>Inicia sesión en tu organización</Text>
+          <View style={styles.brand}>
+            <BrandMark size={68} />
+            <Text style={styles.wordmark}>FotoProy</Text>
+            <Text style={styles.tagline}>Documenta cada paso de la obra</Text>
           </View>
 
-          <ErrorBanner message={error} />
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>Inicia sesión</Text>
+            <Text style={styles.sheetSubtitle}>Entra con tu cuenta de la organización</Text>
 
-          <Field
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="nombre@empresa.com"
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-            textContentType="emailAddress"
-          />
-          <Field
-            label="Contraseña"
-            value={password}
-            onChangeText={setPassword}
-            placeholder="••••••••"
-            secureTextEntry
-            textContentType="password"
-          />
+            <ErrorBanner message={error} />
 
-          <Button title="Entrar" onPress={onSubmit} loading={submitting} disabled={!canSubmit} />
+            <Field
+              label="Email"
+              value={email}
+              onChangeText={setEmail}
+              placeholder="nombre@empresa.com"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              textContentType="emailAddress"
+            />
+            <Field
+              label="Contraseña"
+              value={password}
+              onChangeText={setPassword}
+              placeholder="••••••••"
+              secureTextEntry
+              textContentType="password"
+            />
+
+            <Button title="Entrar" onPress={onSubmit} loading={submitting} disabled={!canSubmit} />
+          </View>
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>¿Aún no tienes cuenta? </Text>
@@ -78,10 +97,38 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  content: { padding: 24, justifyContent: 'center', flexGrow: 1 },
-  header: { marginBottom: 28, alignItems: 'center' },
-  logo: { fontSize: 28, fontWeight: '800', color: colors.text },
-  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
-  footerText: { color: colors.textMuted },
-  link: { color: colors.primary, fontWeight: '600' },
+  glow: {
+    position: 'absolute',
+    top: -90,
+    right: -70,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: colors.primarySoft,
+  },
+  content: { padding: 24, paddingTop: 48, flexGrow: 1, justifyContent: 'center' },
+  brand: { alignItems: 'center', marginBottom: 28 },
+  wordmark: {
+    fontFamily: fonts.displayBold,
+    fontSize: 30,
+    letterSpacing: -0.8,
+    color: colors.ink,
+    marginTop: 14,
+  },
+  tagline: { ...textStyles.caption, marginTop: 4 },
+
+  sheet: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 20,
+    ...elevations.card,
+  },
+  sheetTitle: { ...textStyles.title, fontSize: 20 },
+  sheetSubtitle: { ...textStyles.caption, marginTop: 3, marginBottom: 18 },
+
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 22 },
+  footerText: { fontFamily: fonts.sans, color: colors.textMuted },
+  link: { fontFamily: fonts.sansBold, color: colors.primary },
 });

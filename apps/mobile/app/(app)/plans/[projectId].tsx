@@ -15,7 +15,19 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Banner, Button, CenterLoader, colors, EmptyState, ErrorState, Screen } from '../../../components/ui';
+import {
+  Banner,
+  Button,
+  CenterLoader,
+  colors,
+  elevations,
+  EmptyState,
+  ErrorState,
+  fonts,
+  radius,
+  Screen,
+  textStyles,
+} from '../../../components/ui';
 import { SyncBar } from '../../../components/sync-indicator';
 import { api } from '../../../lib/api';
 import { errorMessage, useAuth } from '../../../lib/auth';
@@ -172,10 +184,9 @@ export default function PlansScreen() {
     ({ item }: { item: Plan }) => (
       <Pressable
         accessibilityRole="button"
-        onPress={() =>
-          router.push({ pathname: '/plan-viewer', params: { planId: item.id } })
-        }
-        style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
+        accessibilityLabel={`Abrir plano ${item.title}`}
+        onPress={() => router.push({ pathname: '/plan-viewer', params: { planId: item.id } })}
+        style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
       >
         {item.thumbnailUrl ? (
           <Image
@@ -201,7 +212,9 @@ export default function PlansScreen() {
             {item.planKind === 'PDF' ? ' · PDF' : ''}
           </Text>
         </View>
-        <Text style={styles.chevron}>›</Text>
+        <View style={styles.chevronWrap}>
+          <Text style={styles.chevron}>›</Text>
+        </View>
       </Pressable>
     ),
     [router],
@@ -212,13 +225,17 @@ export default function PlansScreen() {
   }
 
   return (
-    <Screen>
+    <Screen edges={['bottom']}>
       <Stack.Screen
         options={{
           title: 'Planos',
           headerRight: canUpload(user?.role)
             ? () => (
-                <Pressable onPress={() => setUploadOpen(true)} accessibilityRole="button">
+                <Pressable
+                  onPress={() => setUploadOpen(true)}
+                  accessibilityRole="button"
+                  hitSlop={8}
+                >
                   <Text style={styles.uploadHeader}>＋ Subir</Text>
                 </Pressable>
               )
@@ -248,7 +265,13 @@ export default function PlansScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => load(true)}
+              tintColor={colors.primary}
+            />
+          }
           initialNumToRender={10}
           maxToRenderPerBatch={10}
           windowSize={5}
@@ -277,6 +300,7 @@ export default function PlansScreen() {
       >
         <View style={styles.sheetOverlay}>
           <View style={styles.sheet}>
+            <View style={styles.sheetGrabber} />
             <Text style={styles.sheetTitle}>Subir plano</Text>
             <Text style={styles.sheetHint}>
               Elige una imagen del plano o mapa. Se guarda en el proyecto y podrás anclar fotos
@@ -286,15 +310,20 @@ export default function PlansScreen() {
               value={title}
               onChangeText={setTitle}
               placeholder="Título del plano (ej.: Plano estructural – Piso 1)"
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={colors.textFaint}
               style={styles.input}
               maxLength={255}
             />
             {uploadProgress !== null ? (
-              <View style={styles.progressTrack}>
-                <View
-                  style={[styles.progressFill, { width: `${Math.round(uploadProgress * 100)}%` }]}
-                />
+              <View style={styles.progressBlock}>
+                <View style={styles.progressTrack}>
+                  <View
+                    style={[styles.progressFill, { width: `${Math.round(uploadProgress * 100)}%` }]}
+                  />
+                </View>
+                <Text style={styles.progressLabel}>
+                  Subiendo… {Math.round(uploadProgress * 100)}%
+                </Text>
               </View>
             ) : null}
             {uploadError ? <Text style={styles.uploadError}>{uploadError}</Text> : null}
@@ -319,56 +348,83 @@ export default function PlansScreen() {
 
 const styles = StyleSheet.create({
   bannerArea: { paddingHorizontal: 16, paddingTop: 8 },
-  list: { padding: 16 },
+  list: { padding: 16, paddingBottom: 40 },
+  uploadHeader: { fontFamily: fonts.sansBold, color: colors.primary, fontSize: 15 },
+
   card: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
-    borderRadius: 12,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.line,
     padding: 10,
     marginBottom: 10,
+    ...elevations.card,
   },
-  thumb: { width: 64, height: 64, borderRadius: 8, backgroundColor: colors.border },
+  cardPressed: { backgroundColor: colors.surfaceAlt, transform: [{ scale: 0.99 }] },
+  thumb: { width: 66, height: 66, borderRadius: radius.md, backgroundColor: colors.surfaceAlt },
   thumbPlaceholder: { alignItems: 'center', justifyContent: 'center' },
   thumbGlyph: { fontSize: 26 },
   cardBody: { flex: 1, marginHorizontal: 12 },
-  title: { fontSize: 15, fontWeight: '600', color: colors.text },
-  meta: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
-  chevron: { fontSize: 24, color: colors.textMuted },
-  uploadHeader: { color: colors.primary, fontSize: 15, fontWeight: '700' },
-  sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  title: { ...textStyles.heading, fontSize: 16 },
+  meta: { ...textStyles.caption, fontSize: 12.5, marginTop: 3 },
+  chevronWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chevron: { fontFamily: fonts.sansBold, fontSize: 17, color: colors.textFaint, marginTop: -2 },
+
+  sheetOverlay: { flex: 1, backgroundColor: 'rgba(10,16,32,0.55)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.bg,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     padding: 20,
     paddingBottom: 34,
   },
-  sheetTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
-  sheetHint: { fontSize: 13, color: colors.textMuted, marginTop: 6, lineHeight: 19 },
+  sheetGrabber: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.lineStrong,
+    marginBottom: 16,
+  },
+  sheetTitle: { ...textStyles.title, fontSize: 20 },
+  sheetHint: { ...textStyles.caption, marginTop: 6, lineHeight: 19 },
   input: {
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 15,
+    fontFamily: fonts.sansMedium,
     color: colors.text,
-    marginTop: 14,
-    marginBottom: 14,
+    marginTop: 16,
+    marginBottom: 16,
   },
+  progressBlock: { marginBottom: 14, gap: 6 },
   progressTrack: {
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.border,
+    backgroundColor: colors.line,
     overflow: 'hidden',
-    marginBottom: 14,
   },
   progressFill: { height: '100%', backgroundColor: colors.primary },
-  uploadError: { color: colors.danger, fontSize: 13, marginBottom: 10 },
+  progressLabel: { ...textStyles.caption, fontSize: 12.5 },
+  uploadError: {
+    fontFamily: fonts.sansMedium,
+    color: colors.danger,
+    fontSize: 13,
+    marginBottom: 10,
+  },
   cancel: { alignItems: 'center', marginTop: 14 },
-  cancelText: { color: colors.textMuted, fontSize: 14, fontWeight: '600' },
+  cancelText: { fontFamily: fonts.sansSemiBold, color: colors.textMuted, fontSize: 14 },
 });

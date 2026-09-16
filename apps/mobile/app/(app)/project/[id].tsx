@@ -1,7 +1,17 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Banner, CenterLoader, colors, ErrorState, Screen, textStyles } from '../../../components/ui';
+import {
+  Banner,
+  CenterLoader,
+  colors,
+  elevations,
+  ErrorState,
+  fonts,
+  radius,
+  Screen,
+  textStyles,
+} from '../../../components/ui';
 import { SyncBar } from '../../../components/sync-indicator';
 import { api } from '../../../lib/api';
 import { errorMessage, useAuth } from '../../../lib/auth';
@@ -20,12 +30,15 @@ export default function ProjectDetailScreen() {
   const [mediaCount, setMediaCount] = useState(0);
   const { online } = useSync();
   const retryBusyRef = useRef(false);
+  const loadedOnceRef = useRef(false);
 
   const load = useCallback(async () => {
     if (!token || !id) {
       return;
     }
-    setLoading(true);
+    if (!loadedOnceRef.current) {
+      setLoading(true);
+    }
     setError(null);
     setOffline(false);
     try {
@@ -52,6 +65,7 @@ export default function ProjectDetailScreen() {
       }
       setError(errorMessage(err));
     } finally {
+      loadedOnceRef.current = true;
       setLoading(false);
     }
   }, [token, id]);
@@ -104,19 +118,29 @@ export default function ProjectDetailScreen() {
       ? `${Number(project.latitude).toFixed(5)}, ${Number(project.longitude).toFixed(5)}`
       : null;
 
-  return (
-    <Screen>
-      <Stack.Screen options={{ title: project?.code ?? 'Proyecto' }} />
-      {loading ? (
-        <CenterLoader />
-      ) : error ? (
+  const canShare = user?.role === 'ADMIN' || user?.role === 'SUPERVISOR';
+
+  if (loading) {
+    return <CenterLoader />;
+  }
+
+  if (error || !project) {
+    return (
+      <Screen>
         <ErrorState
           title="No se pudo cargar el proyecto"
-          message={error}
+          message={error ?? 'El proyecto no está disponible en este dispositivo.'}
           onRetry={() => void load()}
         />
-      ) : project ? (
-        <ScrollView contentContainerStyle={styles.padded}>
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen>
+      <Stack.Screen options={{ title: project.code }} />
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.bannerArea}>
           <SyncBar />
           {offline ? (
             <Banner
@@ -131,99 +155,139 @@ export default function ProjectDetailScreen() {
               onAction={() => void refreshSilently()}
             />
           ) : null}
-          <Text style={textStyles.title}>{project.name}</Text>
+        </View>
+
+        {/* Hero */}
+        <View style={styles.hero}>
+          <Text style={styles.heroCode}>{project.code}</Text>
+          <Text style={styles.heroName}>{project.name}</Text>
+          <Text style={styles.heroClient}>{project.clientName ?? 'Sin cliente'}</Text>
           {project.description ? (
-            <Text style={styles.description}>{project.description}</Text>
+            <Text style={styles.heroDescription}>{project.description}</Text>
           ) : null}
+        </View>
 
-          <View style={styles.card}>
-            <Row label="Código" value={project.code} />
-            <Row label="Cliente" value={project.clientName ?? '—'} />
-            <Row label="Ubicación" value={location ?? '—'} />
-            <Row label="Creado" value={formatDate(project.createdAt)} />
+        {/* Primary action */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Tomar foto o video"
+          onPress={() =>
+            router.push({
+              pathname: '/capture',
+              params: {
+                projectId: id,
+                projectCode: project.code,
+                projectName: project.name,
+              },
+            })
+          }
+          style={({ pressed }) => [styles.captureButton, pressed && styles.capturePressed]}
+        >
+          <View style={styles.captureIconWrap}>
+            <Text style={styles.captureIcon}>📷</Text>
           </View>
+          <View style={styles.captureTextWrap}>
+            <Text style={styles.captureTitle}>Tomar foto / video</Text>
+            <Text style={styles.captureSubtitle}>
+              {mediaCount > 0
+                ? `${mediaCount} ${mediaCount === 1 ? 'medio guardado' : 'medios guardados'} en este equipo`
+                : 'Documenta el avance de la obra'}
+            </Text>
+          </View>
+          <Text style={styles.captureChevron}>›</Text>
+        </Pressable>
 
-          <Pressable
-            accessibilityRole="button"
+        {/* Secondary actions */}
+        <View style={styles.grid}>
+          <ActionTile
+            glyph="🗺️"
+            title="Planos"
+            subtitle="Anclar fotos al plano"
             onPress={() =>
               router.push({ pathname: '/plans/[projectId]', params: { projectId: id } })
             }
-            style={({ pressed }) => [styles.galleryButton, pressed && { opacity: 0.85 }]}
-          >
-            <Text style={styles.galleryButtonIcon}>🗺️</Text>
-            <View style={styles.captureButtonText}>
-              <Text style={styles.galleryButtonTitle}>Planos del proyecto</Text>
-              <Text style={styles.galleryButtonSubtitle}>
-                Ver y subir planos/mapas para anclar evidencias
-              </Text>
-            </View>
-          </Pressable>
-
-          {user?.role === 'ADMIN' || user?.role === 'SUPERVISOR' ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() =>
-                router.push({ pathname: '/share/[projectId]', params: { projectId: id } })
-              }
-              style={({ pressed }) => [styles.galleryButton, pressed && { opacity: 0.85 }]}
-            >
-              <Text style={styles.galleryButtonIcon}>🔗</Text>
-              <View style={styles.captureButtonText}>
-                <Text style={styles.galleryButtonTitle}>Compartir avance</Text>
-                <Text style={styles.galleryButtonSubtitle}>
-                  Crea un enlace de solo lectura para el cliente (expira solo)
-                </Text>
-              </View>
-            </Pressable>
-          ) : null}
-
-          <Pressable
-            accessibilityRole="button"
-            onPress={() =>
-              router.push({
-                pathname: '/capture',
-                params: {
-                  projectId: id,
-                  projectCode: project.code,
-                  projectName: project.name,
-                },
-              })
+          />
+          <ActionTile
+            glyph="🖼️"
+            title="Galería"
+            subtitle={
+              mediaCount > 0
+                ? `${mediaCount} ${mediaCount === 1 ? 'medio' : 'medios'}`
+                : 'Local y del equipo'
             }
-            style={({ pressed }) => [styles.captureButton, pressed && { opacity: 0.85 }]}
-          >
-            <Text style={styles.captureButtonIcon}>📷</Text>
-            <View style={styles.captureButtonText}>
-              <Text style={styles.captureButtonTitle}>Tomar foto / video</Text>
-              <Text style={styles.captureButtonSubtitle}>Documenta el avance de la obra</Text>
-            </View>
-          </Pressable>
+            onPress={() => router.push({ pathname: '/gallery', params: { projectId: id } })}
+          />
+        </View>
 
+        {canShare ? (
           <Pressable
             accessibilityRole="button"
-            onPress={() => router.push({ pathname: '/gallery', params: { projectId: id } })}
-            style={({ pressed }) => [styles.galleryButton, pressed && { opacity: 0.85 }]}
+            accessibilityLabel="Compartir avance"
+            onPress={() =>
+              router.push({ pathname: '/share/[projectId]', params: { projectId: id } })
+            }
+            style={({ pressed }) => [styles.rowTile, pressed && styles.tilePressed]}
           >
-            <Text style={styles.galleryButtonIcon}>🖼️</Text>
-            <View style={styles.captureButtonText}>
-              <Text style={styles.galleryButtonTitle}>
-                Galería local · {mediaCount} {mediaCount === 1 ? 'medio' : 'medios'}
-              </Text>
-              <Text style={styles.galleryButtonSubtitle}>
-                Fotos y videos guardados en este equipo
+            <View style={styles.rowTileIcon}>
+              <Text style={styles.rowTileGlyph}>🔗</Text>
+            </View>
+            <View style={styles.rowTileText}>
+              <Text style={styles.rowTileTitle}>Compartir avance</Text>
+              <Text style={styles.rowTileSubtitle}>
+                Enlace de solo lectura para el cliente, con expiración
               </Text>
             </View>
+            <Text style={styles.tileChevron}>›</Text>
           </Pressable>
-        </ScrollView>
-      ) : null}
+        ) : null}
+
+        {/* Details */}
+        <Text style={styles.sectionLabel}>Detalles</Text>
+        <View style={styles.infoCard}>
+          <InfoRow label="Código" value={project.code} />
+          <InfoRow label="Cliente" value={project.clientName ?? '—'} />
+          <InfoRow label="Ubicación" value={location ?? '—'} />
+          <InfoRow label="Creado" value={formatDate(project.createdAt)} last />
+        </View>
+      </ScrollView>
     </Screen>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function ActionTile({
+  glyph,
+  title,
+  subtitle,
+  onPress,
+}: {
+  glyph: string;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+}) {
   return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value}</Text>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      onPress={onPress}
+      style={({ pressed }) => [styles.tile, pressed && styles.tilePressed]}
+    >
+      <View style={styles.tileIcon}>
+        <Text style={styles.tileGlyph}>{glyph}</Text>
+      </View>
+      <Text style={styles.tileTitle}>{title}</Text>
+      <Text style={styles.tileSubtitle} numberOfLines={2}>
+        {subtitle}
+      </Text>
+    </Pressable>
+  );
+}
+
+function InfoRow({ label, value, last }: { label: string; value: string; last?: boolean }) {
+  return (
+    <View style={[styles.infoRow, !last && styles.infoRowBorder]}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value}</Text>
     </View>
   );
 }
@@ -234,48 +298,104 @@ function formatDate(iso: string): string {
 }
 
 const styles = StyleSheet.create({
-  padded: { padding: 20 },
-  description: { fontSize: 15, color: colors.textMuted, marginTop: 8 },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginTop: 20,
-    padding: 16,
+  content: { padding: 20, paddingBottom: 48 },
+  bannerArea: { marginBottom: 4 },
+
+  hero: { marginTop: 4, marginBottom: 20 },
+  heroCode: {
+    ...textStyles.micro,
+    color: colors.primary,
+    marginBottom: 8,
   },
-  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 },
-  rowLabel: { fontSize: 14, color: colors.textMuted },
-  rowValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.text,
-    flexShrink: 1,
-    textAlign: 'right',
-  },
+  heroName: { ...textStyles.display, fontSize: 26, lineHeight: 31 },
+  heroClient: { ...textStyles.caption, marginTop: 6 },
+  heroDescription: { ...textStyles.subtitle, marginTop: 10 },
+
   captureButton: {
-    marginTop: 16,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 14,
     backgroundColor: colors.primary,
-    borderRadius: 14,
+    borderRadius: radius.xl,
     padding: 18,
+    ...elevations.floating,
   },
-  captureButtonIcon: { fontSize: 26, marginRight: 12 },
-  captureButtonText: { flex: 1 },
-  captureButtonTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
-  captureButtonSubtitle: { color: '#DBEAFE', fontSize: 13, marginTop: 2 },
-  galleryButton: {
-    marginTop: 12,
+  capturePressed: { backgroundColor: colors.primaryPressed, transform: [{ scale: 0.99 }] },
+  captureIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  captureIcon: { fontSize: 24 },
+  captureTextWrap: { flex: 1 },
+  captureTitle: { fontFamily: fonts.displayBold, fontSize: 17, color: '#FFFFFF' },
+  captureSubtitle: { fontFamily: fonts.sansMedium, fontSize: 12.5, color: '#D8E3FF', marginTop: 2 },
+  captureChevron: { fontFamily: fonts.sansBold, fontSize: 22, color: '#D8E3FF' },
+
+  grid: { flexDirection: 'row', gap: 12, marginTop: 12 },
+  tile: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 16,
+    minHeight: 128,
+    ...elevations.card,
+  },
+  tilePressed: { backgroundColor: colors.surfaceAlt, transform: [{ scale: 0.985 }] },
+  tileIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  tileGlyph: { fontSize: 20 },
+  tileTitle: { ...textStyles.heading, fontSize: 16 },
+  tileSubtitle: { ...textStyles.caption, fontSize: 12.5, marginTop: 2 },
+
+  rowTile: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 14,
+    marginTop: 12,
     backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 18,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.line,
+    padding: 16,
+    ...elevations.card,
   },
-  galleryButtonIcon: { fontSize: 24, marginRight: 12 },
-  galleryButtonTitle: { color: colors.text, fontSize: 16, fontWeight: '700' },
-  galleryButtonSubtitle: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
+  rowTileIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: colors.accentSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowTileGlyph: { fontSize: 19 },
+  rowTileText: { flex: 1 },
+  rowTileTitle: { ...textStyles.heading, fontSize: 16 },
+  rowTileSubtitle: { ...textStyles.caption, fontSize: 12.5, marginTop: 2 },
+  tileChevron: { fontFamily: fonts.sansBold, fontSize: 20, color: colors.textFaint },
+
+  sectionLabel: { ...textStyles.micro, marginTop: 28, marginBottom: 10 },
+  infoCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.line,
+    paddingHorizontal: 16,
+  },
+  infoRow: { paddingVertical: 14 },
+  infoRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.line },
+  infoLabel: { ...textStyles.micro },
+  infoValue: { ...textStyles.bodyStrong, marginTop: 3 },
 });

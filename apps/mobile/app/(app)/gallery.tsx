@@ -12,7 +12,17 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Banner, CenterLoader, colors, EmptyState, ErrorState, Screen } from '../../components/ui';
+import {
+  Banner,
+  CenterLoader,
+  colors,
+  EmptyState,
+  ErrorState,
+  FilterChip,
+  fonts,
+  radius,
+  Screen,
+} from '../../components/ui';
 import { SyncBar } from '../../components/sync-indicator';
 import { listLocalPins } from '../../lib/db';
 import { listMergedGallery, refreshRemoteGallery } from '../../lib/remote-gallery';
@@ -48,26 +58,34 @@ function formatDuration(ms: number | null): string {
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
-function Chip({
-  label,
-  active,
-  onPress,
-  disabled,
+function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
 }: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-  disabled?: boolean;
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (next: T) => void;
 }) {
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={[styles.chip, active && styles.chipActive, disabled && styles.chipDisabled]}
-      accessibilityRole="button"
-    >
-      <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
-    </Pressable>
+    <View style={styles.segmented}>
+      {options.map((option) => {
+        const active = option.value === value;
+        return (
+          <Pressable
+            key={option.value}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+            onPress={() => onChange(option.value)}
+            style={[styles.segment, active && styles.segmentActive]}
+          >
+            <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
+              {option.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
@@ -82,19 +100,14 @@ interface MediaTileProps {
  * Memoized square tile. Kept outside the screen so scrolling and filter
  * changes don't re-render (or re-decode) the whole grid (F4.3).
  */
-const MediaTile = React.memo(function MediaTile({
-  item,
-  thumbUri,
-  badge,
-  onOpen,
-}: MediaTileProps) {
+const MediaTile = React.memo(function MediaTile({ item, thumbUri, badge, onOpen }: MediaTileProps) {
   const isVideo = item.kind === 'VIDEO';
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={isVideo ? 'Abrir video' : 'Abrir foto'}
       onPress={() => onOpen(item)}
-      style={({ pressed }) => [styles.tile, pressed && { opacity: 0.8 }]}
+      style={({ pressed }) => [styles.tile, pressed && { opacity: 0.85 }]}
     >
       {thumbUri ? (
         <Image
@@ -314,6 +327,8 @@ export default function GalleryScreen() {
     });
   }, [items, author, days, planId, pinnedIds]);
 
+  const filtersActive = author !== 'all' || days !== 0 || planId !== null;
+
   const openMedia = useCallback(
     (item: MediaRow) => {
       if (!item.isRemote) {
@@ -340,18 +355,14 @@ export default function GalleryScreen() {
 
   const renderItem = useCallback(
     ({ item }: { item: MediaRow }) => {
-      const queueState: ItemSyncState | undefined = item.isRemote
-        ? undefined
-        : queueItems[item.id];
+      const queueState: ItemSyncState | undefined = item.isRemote ? undefined : queueItems[item.id];
       const badge: ItemSyncState | 'REMOTE' | null =
         !item.isRemote && (queueState || item.syncedAt == null)
           ? (queueState ?? 'PENDING')
           : item.isRemote
             ? 'REMOTE'
             : null;
-      return (
-        <MediaTile item={item} thumbUri={tileThumb(item)} badge={badge} onOpen={openMedia} />
-      );
+      return <MediaTile item={item} thumbUri={tileThumb(item)} badge={badge} onOpen={openMedia} />;
     },
     [queueItems, tileThumb, openMedia],
   );
@@ -373,7 +384,7 @@ export default function GalleryScreen() {
   }
 
   return (
-    <Screen>
+    <Screen edges={['bottom']}>
       <View style={styles.bannerArea}>
         <SyncBar />
         {error ? (
@@ -394,39 +405,28 @@ export default function GalleryScreen() {
       </View>
 
       {/* Filters */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRow}
-      >
-        <Chip label="Todas" active={author === 'all'} onPress={() => setAuthor('all')} />
-        <Chip label="Mías" active={author === 'mine'} onPress={() => setAuthor('mine')} />
-        <Chip label="Equipo" active={author === 'team'} onPress={() => setAuthor('team')} />
-        <Chip
-          label={
-            days === 0
-              ? '📅 Cualquier fecha'
-              : days === 7
-                ? '📅 Últimos 7 días'
-                : '📅 Últimos 30 días'
-          }
-          active={days !== 0}
-          onPress={() => setDays((d) => (d === 0 ? 7 : d === 7 ? 30 : 0))}
+      <View style={styles.filtersWrap}>
+        <Segmented
+          value={author}
+          onChange={setAuthor}
+          options={[
+            { value: 'all', label: 'Todas' },
+            { value: 'mine', label: 'Mías' },
+            { value: 'team', label: 'Equipo' },
+          ]}
         />
-        {planId ? (
-          <Chip label="📌 Plano seleccionado ✕" active onPress={() => setPlanId(null)} />
-        ) : null}
-      </ScrollView>
-
-      {plans.length > 0 && author !== 'team' ? (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterRow}
+          contentContainerStyle={styles.chipRow}
         >
-          <Text style={styles.filterLabel}>Planos:</Text>
+          <FilterChip
+            label={days === 0 ? '📅 Cualquier fecha' : days === 7 ? '📅 7 días' : '📅 30 días'}
+            active={days !== 0}
+            onPress={() => setDays((d) => (d === 0 ? 7 : d === 7 ? 30 : 0))}
+          />
           {plans.map((plan) => (
-            <Chip
+            <FilterChip
               key={plan.id}
               label={plan.title}
               active={planId === plan.id}
@@ -434,7 +434,18 @@ export default function GalleryScreen() {
             />
           ))}
         </ScrollView>
-      ) : null}
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryText}>
+            {visible.length} {visible.length === 1 ? 'medio' : 'medios'}
+            {filtersActive ? ` de ${items.length}` : ''}
+          </Text>
+          {filtersActive ? (
+            <Pressable onPress={clearFilters} accessibilityRole="button" hitSlop={6}>
+              <Text style={styles.clearText}>Quitar filtros</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
 
       <FlatList
         data={visible}
@@ -443,7 +454,11 @@ export default function GalleryScreen() {
         numColumns={3}
         contentContainerStyle={styles.list}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => void refreshAll()} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void refreshAll()}
+            tintColor={colors.primary}
+          />
         }
         initialNumToRender={15}
         maxToRenderPerBatch={12}
@@ -473,59 +488,83 @@ export default function GalleryScreen() {
 }
 
 const styles = StyleSheet.create({
-  bannerArea: { paddingHorizontal: 10 },
-  filterRow: { paddingHorizontal: 10, paddingVertical: 6, gap: 8, alignItems: 'center' },
-  filterLabel: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
-  chip: {
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: colors.surface,
+  bannerArea: { paddingHorizontal: 12, paddingTop: 8 },
+
+  filtersWrap: { paddingTop: 4 },
+  segmented: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    marginHorizontal: 12,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.line,
+    padding: 3,
+    gap: 2,
   },
-  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  chipDisabled: { opacity: 0.5 },
-  chipText: { fontSize: 13, color: colors.text, fontWeight: '600' },
-  chipTextActive: { color: '#FFFFFF' },
-  list: { padding: 4 },
-  tile: {
-    flex: 1 / 3,
-    aspectRatio: 1,
-    margin: 2,
-    borderRadius: 8,
-    overflow: 'hidden',
-    backgroundColor: colors.border,
-  },
-  tileImage: { width: '100%', height: '100%' },
-  tilePlaceholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#334155' },
-  videoGlyph: { fontSize: 22, color: 'rgba(255,255,255,0.75)' },
-  videoBadge: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+  segment: { paddingHorizontal: 16, paddingVertical: 7, borderRadius: radius.pill },
+  segmentActive: { backgroundColor: colors.surface },
+  segmentText: { fontFamily: fonts.sansSemiBold, fontSize: 13, color: colors.textMuted },
+  segmentTextActive: { color: colors.ink },
+
+  chipRow: { paddingHorizontal: 12, paddingTop: 10, paddingBottom: 2, gap: 8 },
+  summaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 14,
+    paddingTop: 10,
+  },
+  summaryText: { fontFamily: fonts.sansSemiBold, fontSize: 12.5, color: colors.textMuted },
+  clearText: { fontFamily: fonts.sansBold, fontSize: 12.5, color: colors.primary },
+
+  list: { padding: 3, paddingTop: 8 },
+  tile: {
+    flex: 1 / 3,
+    aspectRatio: 1,
+    margin: 3,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: colors.surfaceAlt,
+  },
+  tileImage: { width: '100%', height: '100%' },
+  tilePlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.ink,
+  },
+  videoGlyph: { fontSize: 22, color: 'rgba(255,255,255,0.78)' },
+  videoBadge: {
+    position: 'absolute',
+    bottom: 5,
+    left: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(10,16,32,0.72)',
+    borderRadius: 7,
     paddingHorizontal: 6,
     paddingVertical: 3,
   },
-  videoIcon: { color: '#FFFFFF', fontSize: 11 },
-  videoDuration: { color: '#FFFFFF', fontSize: 11, fontWeight: '600' },
+  videoIcon: { color: '#FFFFFF', fontSize: 9 },
+  videoDuration: {
+    color: '#FFFFFF',
+    fontSize: 10.5,
+    fontFamily: fonts.displayMedium,
+    letterSpacing: 0.3,
+  },
   syncBadge: {
     position: 'absolute',
-    top: 4,
-    right: 4,
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    top: 5,
+    right: 5,
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(10,16,32,0.72)',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 5,
   },
   syncBadgeIcon: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
-  syncBadgeError: { backgroundColor: '#DC2626' },
+  syncBadgeError: { backgroundColor: 'rgba(220,38,38,0.9)' },
 });

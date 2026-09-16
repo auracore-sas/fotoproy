@@ -1,7 +1,18 @@
 import { Link } from 'expo-router';
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Button, colors, ErrorBanner, Field, Screen, textStyles } from '../../components/ui';
+import {
+  BrandMark,
+  Button,
+  colors,
+  ErrorBanner,
+  Field,
+  fonts,
+  radius,
+  elevations,
+  Screen,
+  textStyles,
+} from '../../components/ui';
 import { errorMessage, useAuth } from '../../lib/auth';
 
 export default function RegisterScreen() {
@@ -43,58 +54,64 @@ export default function RegisterScreen() {
 
   return (
     <Screen>
+      <View pointerEvents="none" style={styles.glow} />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <View style={styles.header}>
-            <Text style={styles.title}>Crea tu cuenta</Text>
-            <Text style={textStyles.subtitle}>
-              Se creará tu organización con el rol de administrador
-            </Text>
+          <View style={styles.brand}>
+            <BrandMark size={56} />
+            <Text style={styles.wordmark}>FotoProy</Text>
           </View>
 
-          <ErrorBanner message={error} />
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>Crea tu cuenta</Text>
+            <Text style={styles.sheetSubtitle}>
+              Se creará tu organización y entrarás como administrador
+            </Text>
 
-          <Field
-            label="Nombre completo"
-            value={fullName}
-            onChangeText={setFullName}
-            placeholder="Ej. María Pérez"
-            autoCapitalize="words"
-          />
-          <Field
-            label="Empresa / Organización"
-            value={organizationName}
-            onChangeText={setOrganizationName}
-            placeholder="Ej. Constructora XYZ"
-          />
-          <Field
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="nombre@empresa.com"
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-            textContentType="emailAddress"
-          />
-          <Field
-            label="Contraseña (mín. 8 caracteres)"
-            value={password}
-            onChangeText={setPassword}
-            placeholder="••••••••"
-            secureTextEntry
-            textContentType="newPassword"
-          />
+            <ErrorBanner message={error} />
 
-          <Button
-            title="Crear cuenta"
-            onPress={onSubmit}
-            loading={submitting}
-            disabled={!canSubmit}
-          />
+            <Field
+              label="Nombre completo"
+              value={fullName}
+              onChangeText={setFullName}
+              placeholder="Ej. María Pérez"
+              autoCapitalize="words"
+            />
+            <Field
+              label="Empresa / Organización"
+              value={organizationName}
+              onChangeText={setOrganizationName}
+              placeholder="Ej. Constructora XYZ"
+            />
+            <Field
+              label="Email"
+              value={email}
+              onChangeText={setEmail}
+              placeholder="nombre@empresa.com"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              textContentType="emailAddress"
+            />
+            <Field
+              label="Contraseña (mín. 8 caracteres)"
+              value={password}
+              onChangeText={setPassword}
+              placeholder="••••••••"
+              secureTextEntry
+              textContentType="newPassword"
+            />
+
+            <Button
+              title="Crear cuenta"
+              onPress={onSubmit}
+              loading={submitting}
+              disabled={!canSubmit}
+            />
+          </View>
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>¿Ya tienes cuenta? </Text>
@@ -110,10 +127,35 @@ export default function RegisterScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  content: { padding: 24, justifyContent: 'center', flexGrow: 1 },
-  header: { marginBottom: 24, alignItems: 'center' },
-  title: { fontSize: 24, fontWeight: '700', color: colors.text },
-  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
-  footerText: { color: colors.textMuted },
-  link: { color: colors.primary, fontWeight: '600' },
+  glow: {
+    position: 'absolute',
+    top: -90,
+    left: -80,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: colors.accentSoft,
+  },
+  content: { padding: 24, paddingTop: 40, flexGrow: 1, justifyContent: 'center' },
+  brand: { alignItems: 'center', marginBottom: 22 },
+  wordmark: {
+    fontFamily: fonts.displayBold,
+    fontSize: 26,
+    letterSpacing: -0.6,
+    color: colors.ink,
+    marginTop: 12,
+  },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 20,
+    ...elevations.card,
+  },
+  sheetTitle: { ...textStyles.title, fontSize: 20 },
+  sheetSubtitle: { ...textStyles.caption, marginTop: 3, marginBottom: 18 },
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 22 },
+  footerText: { fontFamily: fonts.sans, color: colors.textMuted },
+  link: { fontFamily: fonts.sansBold, color: colors.primary },
 });

@@ -20,7 +20,7 @@ import {
   View,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { CenterLoader, colors, ErrorState } from '../../components/ui';
+import { CenterLoader, colors, ErrorState, fonts, radius, RoundButton } from '../../components/ui';
 import CommentsSheet from '../../components/comments-sheet';
 import { api } from '../../lib/api';
 import { errorMessage, useAuth } from '../../lib/auth';
@@ -196,8 +196,7 @@ export default function MediaViewerScreen() {
           <ErrorState
             title={error ? 'No se pudo abrir el medio' : 'Medio no disponible'}
             message={
-              error ??
-              'Este medio ya no está disponible. Revisa tu conexión e inténtalo de nuevo.'
+              error ?? 'Este medio ya no está disponible. Revisa tu conexión e inténtalo de nuevo.'
             }
             onRetry={() => void load()}
           />
@@ -324,14 +323,9 @@ export default function MediaViewerScreen() {
       </View>
 
       {/* Close */}
-      <Pressable
-        onPress={() => router.back()}
-        style={styles.closeButton}
-        accessibilityRole="button"
-        accessibilityLabel="Cerrar"
-      >
-        <Text style={styles.closeText}>✕</Text>
-      </Pressable>
+      <View style={styles.closeButton}>
+        <RoundButton glyph="✕" label="Cerrar" tone="dark" size={44} onPress={() => router.back()} />
+      </View>
 
       {/* Info */}
       <View style={styles.info}>
@@ -506,100 +500,107 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 56,
     right: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  closeText: { color: '#FFFFFF', fontSize: 18, fontWeight: '700' },
   info: {
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    backgroundColor: 'rgba(8,12,24,0.88)',
+    paddingHorizontal: 18,
+    paddingTop: 14,
     paddingBottom: 30,
   },
-  kind: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
-  date: { color: '#E2E8F0', fontSize: 14, marginTop: 4 },
-  remote: { color: '#93C5FD', fontSize: 13, marginTop: 4, fontStyle: 'italic' },
-  sync: { color: '#6EE7B7', fontSize: 13, marginTop: 4, fontWeight: '600' },
-  syncPending: { color: '#FBBF24' },
-  location: { color: '#93C5FD', fontSize: 13, marginTop: 4 },
+  kind: { fontFamily: fonts.displayBold, color: '#FFFFFF', fontSize: 17 },
+  date: { fontFamily: fonts.sansMedium, color: '#CBD5E1', fontSize: 13.5, marginTop: 4 },
+  remote: { fontFamily: fonts.sansMedium, color: '#93C5FD', fontSize: 13, marginTop: 4 },
+  sync: { fontFamily: fonts.sansSemiBold, color: '#6EE7B7', fontSize: 13, marginTop: 4 },
+  syncPending: { color: colors.accent },
+  location: { fontFamily: fonts.sansMedium, color: '#93C5FD', fontSize: 13, marginTop: 4 },
   metaButton: {
     alignSelf: 'flex-start',
     marginTop: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: radius.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
-  metaButtonText: { color: '#DBEAFE', fontSize: 13, fontWeight: '600' },
+  metaButtonText: { fontFamily: fonts.sansSemiBold, color: '#E2E8F0', fontSize: 13 },
   metaButtonsRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
   exportRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
   exportButton: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
-    borderRadius: 8,
-    paddingVertical: 9,
+    borderColor: 'rgba(255,255,255,0.18)',
+    borderRadius: radius.md,
+    paddingVertical: 11,
     alignItems: 'center',
   },
-  exportText: { color: '#DBEAFE', fontSize: 13, fontWeight: '600' },
-  exportHint: { color: '#94A3B8', fontSize: 12, marginTop: 8, fontStyle: 'italic' },
+  exportText: { fontFamily: fonts.sansSemiBold, color: '#E2E8F0', fontSize: 13 },
+  exportHint: { fontFamily: fonts.sans, color: '#94A3B8', fontSize: 12, marginTop: 8 },
   notesBox: {
     marginTop: 10,
     backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 8,
-    padding: 10,
+    borderRadius: radius.md,
+    padding: 12,
   },
-  notes: { color: '#E2E8F0', fontSize: 14, lineHeight: 20 },
+  notes: { fontFamily: fonts.sans, color: '#E2E8F0', fontSize: 14, lineHeight: 20 },
   editNoteLink: { marginTop: 8 },
-  editNoteText: { color: '#93C5FD', fontSize: 13, fontWeight: '600' },
+  editNoteText: { fontFamily: fonts.sansSemiBold, color: '#93C5FD', fontSize: 13 },
   noteEditor: { marginTop: 10 },
   noteInput: {
     backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 8,
+    borderRadius: radius.md,
     color: '#FFFFFF',
-    padding: 10,
+    padding: 12,
     minHeight: 64,
     fontSize: 14,
+    fontFamily: fonts.sans,
     textAlignVertical: 'top',
   },
   noteActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 16, marginTop: 8 },
   noteAction: { paddingVertical: 4, paddingHorizontal: 6 },
-  noteActionCancel: { color: '#CBD5E1', fontSize: 14 },
-  noteActionSave: { color: '#93C5FD', fontSize: 14, fontWeight: '700' },
+  noteActionCancel: { fontFamily: fonts.sansMedium, color: '#CBD5E1', fontSize: 14 },
+  noteActionSave: { fontFamily: fonts.sansBold, color: '#93C5FD', fontSize: 14 },
   metaOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(4,8,18,0.6)',
     justifyContent: 'flex-end',
   },
   metaSheet: {
-    backgroundColor: '#0F172A',
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    padding: 20,
-    paddingBottom: 30,
+    backgroundColor: '#0B1220',
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    padding: 22,
+    paddingBottom: 32,
     maxHeight: '75%',
   },
-  metaTitle: { color: '#FFFFFF', fontSize: 17, fontWeight: '700', marginBottom: 12 },
+  metaTitle: { fontFamily: fonts.display, color: '#FFFFFF', fontSize: 19, marginBottom: 12 },
   metaScroll: { flexGrow: 0 },
   metaRow: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.15)',
-    paddingVertical: 10,
+    borderBottomColor: 'rgba(255,255,255,0.12)',
+    paddingVertical: 11,
   },
-  metaLabel: { color: '#94A3B8', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.4 },
-  metaValue: { color: '#E2E8F0', fontSize: 13, marginTop: 3, lineHeight: 18 },
+  metaLabel: {
+    fontFamily: fonts.sansBold,
+    color: '#7C8AA8',
+    fontSize: 10.5,
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+  },
+  metaValue: {
+    fontFamily: fonts.sansMedium,
+    color: '#D7DEEC',
+    fontSize: 13,
+    marginTop: 4,
+    lineHeight: 19,
+  },
   metaClose: {
-    marginTop: 14,
+    marginTop: 16,
     backgroundColor: colors.primary,
-    borderRadius: 10,
-    paddingVertical: 12,
+    borderRadius: radius.md,
+    paddingVertical: 14,
     alignItems: 'center',
   },
-  metaCloseText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  metaCloseText: { fontFamily: fonts.sansBold, color: '#FFFFFF', fontSize: 15 },
 });

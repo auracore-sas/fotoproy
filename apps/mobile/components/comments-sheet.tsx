@@ -18,7 +18,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { colors } from './ui';
+import { colors, fonts, radius, textStyles } from './ui';
 import { api } from '../lib/api';
 import { errorMessage, useAuth } from '../lib/auth';
 import { createLocalComment, enqueueSync, listLocalComments, markCommentSynced } from '../lib/db';
@@ -141,7 +141,8 @@ export default function CommentsSheet({
         style={styles.overlay}
       >
         <View style={styles.sheet}>
-          <Text style={styles.title}>💬 Comentarios</Text>
+          <View style={styles.grabber} />
+          <Text style={styles.title}>Comentarios</Text>
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           {loading ? (
@@ -201,20 +202,29 @@ export default function CommentsSheet({
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  overlay: { flex: 1, backgroundColor: 'rgba(4,8,18,0.6)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.bg,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     padding: 20,
     height: '78%',
   },
-  title: { fontSize: 17, fontWeight: '700', color: colors.text, marginBottom: 10 },
-  errorText: { color: colors.danger, fontSize: 13, marginBottom: 8 },
+  grabber: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.lineStrong,
+    marginBottom: 14,
+  },
+  title: { ...textStyles.title, fontSize: 20, marginBottom: 10 },
+  errorText: { fontFamily: fonts.sansMedium, color: colors.danger, fontSize: 13, marginBottom: 8 },
   loader: { marginTop: 30 },
   list: { flex: 1 },
   emptyWrap: { flexGrow: 1, justifyContent: 'center' },
   empty: {
+    fontFamily: fonts.sans,
     color: colors.textMuted,
     fontSize: 14,
     textAlign: 'center',
@@ -224,39 +234,42 @@ const styles = StyleSheet.create({
   comment: {
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 10,
+    borderColor: colors.line,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primaryBorder,
+    borderRadius: radius.md,
+    padding: 12,
     marginBottom: 8,
   },
-  commentPending: { borderStyle: 'dashed', opacity: 0.9 },
+  commentPending: { borderLeftColor: colors.accent, borderStyle: 'dashed' },
   commentHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  author: { color: colors.primary, fontSize: 13, fontWeight: '700' },
-  when: { color: colors.textMuted, fontSize: 11 },
-  pendingBadge: { color: '#B45309', fontSize: 11, fontWeight: '700' },
-  body: { color: colors.text, fontSize: 14, marginTop: 4, lineHeight: 20 },
+  author: { fontFamily: fonts.sansBold, color: colors.ink, fontSize: 13 },
+  when: { fontFamily: fonts.sansMedium, color: colors.textFaint, fontSize: 11 },
+  pendingBadge: { fontFamily: fonts.sansBold, color: colors.accentInk, fontSize: 11 },
+  body: { fontFamily: fonts.sans, color: colors.text, fontSize: 14, marginTop: 5, lineHeight: 20 },
   composer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginTop: 10 },
   input: {
     flex: 1,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     fontSize: 14,
+    fontFamily: fonts.sans,
     color: colors.text,
     maxHeight: 110,
     textAlignVertical: 'top',
   },
   send: {
     backgroundColor: colors.primary,
-    borderRadius: 10,
+    borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
   sendDisabled: { opacity: 0.5 },
-  sendText: { color: '#FFFFFF', fontWeight: '700' },
+  sendText: { fontFamily: fonts.sansBold, color: '#FFFFFF', fontSize: 14 },
   close: { alignItems: 'center', marginTop: 12 },
-  closeText: { color: colors.textMuted, fontSize: 14, fontWeight: '600' },
+  closeText: { fontFamily: fonts.sansSemiBold, color: colors.textMuted, fontSize: 14 },
 });
