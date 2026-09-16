@@ -1,8 +1,10 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Image as ExpoImage } from 'expo-image';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
   Image,
   Modal,
@@ -17,13 +19,17 @@ import { api } from '../../lib/api';
 import { errorMessage, useAuth } from '../../lib/auth';
 import {
   createLocalPin,
+  dropQueuedEntityOps,
   enqueueSync,
+  getLocalPhoto,
   listLocalPhotos,
   listLocalPins,
   markPinSynced,
+  removeLocalPin,
 } from '../../lib/db';
 import type { LocalPin } from '../../lib/db';
 import { generateId } from '../../lib/id';
+import { cachePlan, localPlanUri } from '../../lib/plan-cache';
 import { useSync } from '../../lib/sync';
 import type { Pin, Plan } from '../../lib/types';
 
@@ -32,6 +38,17 @@ interface LocalMedia {
   kind: 'PHOTO' | 'VIDEO';
   localUri: string | null;
   capturedAt: string;
+}
+
+/** A pin merged from the server list and the local (offline) queue. */
+interface DrawnPin {
+  id: string;
+  photoId: string;
+  x: number;
+  y: number;
+  pending: boolean;
+  thumbnailUri: string | null;
+  capturedAt: string | null;
 }
 
 /** Contains an image (aspect) inside W×H → fitted rectangle. */
@@ -43,51 +60,230 @@ function containFit(W: number, H: number, aspect: number): { w: number; h: numbe
   return { w, h: w / aspect };
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+const MAX_SCALE = 8;
+const MIN_SCALE = 1;
+/** Counter-scale curve for map-style markers (keeps them ~constant on screen). */
+const SCALE_INPUT = [1, 1.5, 2, 3, 4, 6, 8];
+const INVERSE_OUTPUT = SCALE_INPUT.map((value) => 1 / value);
+const PIN_SIZE = 34;
+
 export default function PlanViewerScreen() {
   const router = useRouter();
   const { planId } = useLocalSearchParams<{ planId: string }>();
   const { token } = useAuth();
   const { online } = useSync();
+
   const [plan, setPlan] = useState<Plan | null>(null);
+  const [imageUri, setImageUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(true);
+  const [offlineImage, setOfflineImage] = useState(false);
 
-  // Zoom/pan.
+  // Layout + transform (animated values keep gestures off the React render path).
   const [box, setBox] = useState<{ width: number; height: number } | null>(null);
-  const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const boxRef = useRef(box);
-  boxRef.current = box;
-  const planRef = useRef(plan);
-  planRef.current = plan;
+  const [aspect, setAspect] = useState(0);
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const offsetAnim = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const scaleRef = useRef(1);
   const offsetRef = useRef({ x: 0, y: 0 });
-  const aspectRef = useRef(0); // natural aspect of the plan image
-  const pinchStart = useRef<{ distance: number; scale: number } | null>(null);
-  const lastTap = useRef(0);
-  const tapStart = useRef<{ x: number; y: number; time: number } | null>(null);
+  const aspectRef = useRef(0);
+  const boxRef = useRef<{ width: number; height: number } | null>(null);
   const containerRef = useRef<View | null>(null);
   const containerOrigin = useRef({ x: 0, y: 0 });
 
-  // Pins (server + local pending) and anchoring flow.
-  const [serverPins, setServerPins] = useState<Pin[]>([]);
-  const [localPins, setLocalPins] = useState<LocalPin[]>([]);
-  const [anchorAt, setAnchorAt] = useState<{ x: number; y: number } | null>(null); // %
+  // Anchoring (placement mode) + pins.
+  const [placing, setPlacing] = useState(false);
+  const placingRef = useRef(false);
+  const [pointer, setPointer] = useState({ x: 0, y: 0 }); // canvas coords
+  const pointerRef = useRef({ x: 0, y: 0 });
+  const dragGrab = useRef<{
+    pointer: { x: number; y: number };
+    touch: { x: number; y: number };
+  } | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [localMedia, setLocalMedia] = useState<LocalMedia[]>([]);
   const [savingPin, setSavingPin] = useState(false);
   const [photoPickerBusy, setPhotoPickerBusy] = useState(false);
+  const [serverPins, setServerPins] = useState<Pin[]>([]);
+  const [localPins, setLocalPins] = useState<LocalPin[]>([]);
+  /** Local thumbnails of pending pins (their photo may not be on the server yet). */
+  const [localThumbs, setLocalThumbs] = useState<
+    Record<string, { uri: string | null; capturedAt: string }>
+  >({});
+  const [selected, setSelected] = useState<DrawnPin | null>(null);
+  const momentumRef = useRef<number | null>(null);
 
-  const apply = useCallback((nextScale: number, nextOffset?: { x: number; y: number }) => {
-    const clamped = Math.min(5, Math.max(1, nextScale));
-    scaleRef.current = clamped;
-    if (nextOffset) {
-      offsetRef.current = nextOffset;
+  const pinScale = useMemo(
+    () =>
+      scaleAnim.interpolate({
+        inputRange: SCALE_INPUT,
+        outputRange: INVERSE_OUTPUT,
+        extrapolate: 'clamp',
+      }),
+    [scaleAnim],
+  );
+
+  useEffect(() => {
+    placingRef.current = placing;
+  }, [placing]);
+  useEffect(() => {
+    aspectRef.current = aspect;
+  }, [aspect]);
+  useEffect(() => {
+    boxRef.current = box;
+  }, [box]);
+  useEffect(
+    () => () => {
+      if (momentumRef.current !== null) {
+        cancelAnimationFrame(momentumRef.current);
+      }
+    },
+    [],
+  );
+
+  /** Fitted canvas size for the current container and plan aspect. */
+  const fit = useMemo(() => {
+    if (!box) {
+      return { w: 0, h: 0 };
     }
-    setScale(clamped);
-    setOffset({ ...offsetRef.current });
+    return containFit(box.width, box.height, aspect);
+  }, [box, aspect]);
+  const fitRef = useRef(fit);
+  useEffect(() => {
+    fitRef.current = fit;
+  }, [fit]);
+
+  const applyTransform = useCallback(
+    (nextScale: number, nextOffset: { x: number; y: number }) => {
+      scaleRef.current = nextScale;
+      offsetRef.current = nextOffset;
+      scaleAnim.setValue(nextScale);
+      offsetAnim.setValue(nextOffset);
+    },
+    [offsetAnim, scaleAnim],
+  );
+
+  /** Keeps the plan covering the viewport (photo-viewer style clamping). */
+  const clampOffset = useCallback((x: number, y: number, scale: number) => {
+    const currentBox = boxRef.current;
+    const currentFit = fitRef.current;
+    if (!currentBox) {
+      return { x, y };
+    }
+    const maxX = Math.max(0, (currentFit.w * scale - currentBox.width) / 2);
+    const maxY = Math.max(0, (currentFit.h * scale - currentBox.height) / 2);
+    return { x: clamp(x, -maxX, maxX), y: clamp(y, -maxY, maxY) };
   }, []);
 
+  const setPointerAt = useCallback((point: { x: number; y: number }) => {
+    const currentFit = fitRef.current;
+    const clamped = {
+      x: clamp(point.x, 0, currentFit.w),
+      y: clamp(point.y, 0, currentFit.h),
+    };
+    pointerRef.current = clamped;
+    setPointer(clamped);
+  }, []);
+
+  /** Container coords → canvas coords. */
+  const toCanvas = useCallback((pageX: number, pageY: number) => {
+    const currentBox = boxRef.current;
+    const currentFit = fitRef.current;
+    if (!currentBox) {
+      return { x: 0, y: 0 };
+    }
+    const cx = pageX - containerOrigin.current.x;
+    const cy = pageY - containerOrigin.current.y;
+    const s = scaleRef.current;
+    const o = offsetRef.current;
+    return {
+      x: (cx - (currentBox.width / 2 + o.x)) / s + currentFit.w / 2,
+      y: (cy - (currentBox.height / 2 + o.y)) / s + currentFit.h / 2,
+    };
+  }, []);
+
+  /** Canvas coords → (x%, y%) of the plan. */
+  const toPercentage = useCallback((point: { x: number; y: number }) => {
+    const currentFit = fitRef.current;
+    if (currentFit.w <= 0 || currentFit.h <= 0) {
+      return null;
+    }
+    return {
+      x: clamp((point.x / currentFit.w) * 100, 0, 100),
+      y: clamp((point.y / currentFit.h) * 100, 0, 100),
+    };
+  }, []);
+
+  /** Zooms keeping the given container point under the fingers. */
+  const zoomAround = useCallback(
+    (focalX: number, focalY: number, targetScale: number) => {
+      const currentBox = boxRef.current;
+      const currentFit = fitRef.current;
+      if (!currentBox) {
+        return;
+      }
+      const s = scaleRef.current;
+      const o = offsetRef.current;
+      const nextScale = clamp(targetScale, MIN_SCALE, MAX_SCALE);
+      const u = {
+        x: (focalX - (currentBox.width / 2 + o.x)) / s + currentFit.w / 2,
+        y: (focalY - (currentBox.height / 2 + o.y)) / s + currentFit.h / 2,
+      };
+      const centerX = focalX - (u.x - currentFit.w / 2) * nextScale;
+      const centerY = focalY - (u.y - currentFit.h / 2) * nextScale;
+      const nextOffset = clampOffset(
+        centerX - currentBox.width / 2,
+        centerY - currentBox.height / 2,
+        nextScale,
+      );
+      applyTransform(nextScale, nextOffset);
+    },
+    [applyTransform, clampOffset],
+  );
+
+  const resetView = useCallback(() => {
+    applyTransform(MIN_SCALE, { x: 0, y: 0 });
+  }, [applyTransform]);
+
+  /** Momentum after a pan/fling, decaying until it stops. */
+  const startMomentum = useCallback(
+    (velocityX: number, velocityY: number) => {
+      let vx = velocityX * 14;
+      let vy = velocityY * 14;
+      const step = () => {
+        vx *= 0.92;
+        vy *= 0.92;
+        if (Math.abs(vx) < 0.4 && Math.abs(vy) < 0.4) {
+          momentumRef.current = null;
+          return;
+        }
+        const next = clampOffset(
+          offsetRef.current.x + vx,
+          offsetRef.current.y + vy,
+          scaleRef.current,
+        );
+        offsetRef.current = next;
+        offsetAnim.setValue(next);
+        momentumRef.current = requestAnimationFrame(step);
+      };
+      momentumRef.current = requestAnimationFrame(step);
+    },
+    [clampOffset, offsetAnim],
+  );
+
+  const stopMomentum = useCallback(() => {
+    if (momentumRef.current !== null) {
+      cancelAnimationFrame(momentumRef.current);
+      momentumRef.current = null;
+    }
+  }, []);
+
+  // ------------------------------------------------------------------ data
   const loadPins = useCallback(async () => {
     if (!token || !planId) {
       return;
@@ -103,16 +299,43 @@ export default function PlanViewerScreen() {
   useEffect(() => {
     let mounted = true;
     (async () => {
-      if (!token || !planId) {
+      if (!planId) {
+        return;
+      }
+      // Offline first: a plan opened before shows instantly, even without network.
+      const localCopy = await localPlanUri(planId).catch(() => null);
+      if (mounted && localCopy) {
+        setImageUri(localCopy);
+        setOfflineImage(true);
+      }
+      if (!token) {
+        setLoading(false);
         return;
       }
       try {
         const data = await api.getPlan(token, planId);
-        if (mounted) {
-          setPlan(data);
+        if (!mounted) {
+          return;
         }
+        setPlan(data);
+        setError(null);
+        if (!localCopy && data.planKind === 'IMAGE') {
+          setImageUri(data.fileUrl);
+        }
+        void cachePlan(data).then(async () => {
+          const cached = await localPlanUri(planId).catch(() => null);
+          if (mounted && cached) {
+            setImageUri((current) => current ?? cached);
+          }
+        });
       } catch (err) {
-        if (mounted) {
+        if (!mounted) {
+          return;
+        }
+        const cached = await localPlanUri(planId).catch(() => null);
+        if (cached) {
+          setOfflineImage(true);
+        } else {
           setError(errorMessage(err));
         }
       } finally {
@@ -130,197 +353,186 @@ export default function PlanViewerScreen() {
     void loadPins();
   }, [loadPins, online]);
 
+  // Thumbnails for pending pins (offline anchors): they only exist locally.
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const next: Record<string, { uri: string | null; capturedAt: string }> = {};
+      for (const pin of localPins) {
+        const photo = await getLocalPhoto(pin.photoId).catch(() => null);
+        if (photo) {
+          next[pin.id] = {
+            uri: photo.thumbnailUri ?? photo.localUri,
+            capturedAt: photo.capturedAt,
+          };
+        }
+      }
+      if (mounted) {
+        setLocalThumbs(next);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [localPins]);
+
   const measureContainer = useCallback(() => {
     containerRef.current?.measureInWindow((x, y) => {
       containerOrigin.current = { x, y };
     });
   }, []);
 
-  // ---------------------------------------------------------------- gestures
+  // -------------------------------------------------------------- gestures
+  // Transient gesture state lives in refs: the PanResponder callbacks run
+  // outside React, so they must not depend on render-scoped values.
+  const pinch = useRef<{ distance: number; scale: number } | null>(null);
+  const lastTap = useRef(0);
+  const tap = useRef<{ x: number; y: number; time: number; moved: number } | null>(null);
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt) => {
+        stopMomentum();
+        setSelected(null);
         const touches = evt.nativeEvent.touches;
         if (touches.length === 2) {
-          pinchStart.current = {
+          pinch.current = {
             distance: Math.hypot(
               touches[0].pageX - touches[1].pageX,
               touches[0].pageY - touches[1].pageY,
             ),
             scale: scaleRef.current,
           };
+          dragGrab.current = null;
+        } else if (placingRef.current) {
+          // Grab the pointer so it never jumps when the drag starts.
+          dragGrab.current = {
+            pointer: { ...pointerRef.current },
+            touch: toCanvas(evt.nativeEvent.pageX, evt.nativeEvent.pageY),
+          };
         }
-        tapStart.current = { x: evt.nativeEvent.pageX, y: evt.nativeEvent.pageY, time: Date.now() };
+        tap.current = {
+          x: evt.nativeEvent.pageX,
+          y: evt.nativeEvent.pageY,
+          time: Date.now(),
+          moved: 0,
+        };
       },
       onPanResponderMove: (evt, gesture) => {
         const touches = evt.nativeEvent.touches;
-        if (touches.length >= 2 && pinchStart.current) {
+        if (touches.length >= 2) {
+          if (!pinch.current) {
+            pinch.current = {
+              distance: Math.hypot(
+                touches[0].pageX - touches[1].pageX,
+                touches[0].pageY - touches[1].pageY,
+              ),
+              scale: scaleRef.current,
+            };
+            return;
+          }
           const distance = Math.hypot(
             touches[0].pageX - touches[1].pageX,
             touches[0].pageY - touches[1].pageY,
           );
-          apply(pinchStart.current.scale * (distance / pinchStart.current.distance));
+          const currentBox = boxRef.current;
+          if (!currentBox) {
+            return;
+          }
+          const focalX = (touches[0].pageX + touches[1].pageX) / 2 - containerOrigin.current.x;
+          const focalY = (touches[0].pageY + touches[1].pageY) / 2 - containerOrigin.current.y;
+          zoomAround(
+            focalX,
+            focalY,
+            pinch.current.scale * (distance / Math.max(1, pinch.current.distance)),
+          );
+          if (tap.current) {
+            tap.current.moved += Math.abs(gesture.dx) + Math.abs(gesture.dy);
+          }
           return;
         }
-        if (scaleRef.current > 1) {
-          const limit = 1200;
-          apply(scaleRef.current, {
-            x: Math.min(limit, Math.max(-limit, offsetRef.current.x + gesture.dx)),
-            y: Math.min(limit, Math.max(-limit, offsetRef.current.y + gesture.dy)),
-          });
+        if (tap.current) {
+          tap.current.moved += Math.abs(gesture.dx) + Math.abs(gesture.dy);
+        }
+        if (placingRef.current) {
+          const grab = dragGrab.current;
+          if (grab) {
+            const touch = toCanvas(evt.nativeEvent.pageX, evt.nativeEvent.pageY);
+            setPointerAt({
+              x: grab.pointer.x + (touch.x - grab.touch.x),
+              y: grab.pointer.y + (touch.y - grab.touch.y),
+            });
+          }
+          return;
+        }
+        if (scaleRef.current > MIN_SCALE) {
+          const next = clampOffset(
+            offsetRef.current.x + gesture.dx,
+            offsetRef.current.y + gesture.dy,
+            scaleRef.current,
+          );
+          offsetRef.current = next;
+          offsetAnim.setValue(next);
         }
       },
-      onPanResponderRelease: (evt) => {
-        pinchStart.current = null;
-        const start = tapStart.current;
-        tapStart.current = null;
+      onPanResponderRelease: (evt, gesture) => {
+        pinch.current = null;
+        dragGrab.current = null;
+        const start = tap.current;
+        tap.current = null;
         if (!start) {
           return;
         }
-        const moved = Math.hypot(evt.nativeEvent.pageX - start.x, evt.nativeEvent.pageY - start.y);
+        const moved = start.moved;
         const duration = Date.now() - start.time;
-        if (moved > 10 || duration > 350) {
-          return; // drag, not a tap
+        const isTap = moved < 12 && duration < 350;
+        if (!isTap) {
+          if (!placingRef.current && scaleRef.current > MIN_SCALE) {
+            startMomentum(gesture.vx, gesture.vy);
+          }
+          return;
         }
         const now = Date.now();
-        if (now - lastTap.current < 300) {
-          // Double tap → toggle zoom.
-          apply(scaleRef.current > 1 ? 1 : 2.5, { x: 0, y: 0 });
+        const currentBox = boxRef.current;
+        const focalX = evt.nativeEvent.pageX - containerOrigin.current.x;
+        const focalY = evt.nativeEvent.pageY - containerOrigin.current.y;
+        if (now - lastTap.current < 300 && currentBox) {
+          // Double tap → zoom in on the tapped point (or back to fit).
           lastTap.current = 0;
+          if (scaleRef.current > MIN_SCALE + 0.01) {
+            resetView();
+          } else {
+            zoomAround(focalX, focalY, 2.5);
+          }
           return;
         }
         lastTap.current = now;
-        // Single tap → wait briefly to confirm it is not a double tap, then
-        // interpret the point on the plan and offer anchoring. Coordinates are
-        // read NOW (RN nullifies synthetic events after the handler returns).
-        const { pageX, pageY } = evt.nativeEvent;
-        setTimeout(() => {
-          if (lastTap.current === now && boxRef.current && planRef.current) {
-            const pct = pointToPercentage(pageX, pageY);
-            if (pct) {
-              setAnchorAt(pct);
-            }
-          }
-        }, 300);
+        // Single tap: while placing it positions the marker; otherwise it does
+        // nothing (anchoring is explicit — no more accidental pins).
+        if (placingRef.current) {
+          setPointerAt(toCanvas(evt.nativeEvent.pageX, evt.nativeEvent.pageY));
+        }
       },
       onPanResponderTerminate: () => {
-        pinchStart.current = null;
-        tapStart.current = null;
+        pinch.current = null;
+        dragGrab.current = null;
+        tap.current = null;
       },
     }),
   ).current;
 
-  /** Maps a screen point to (x%, y%) on the plan (0–100), or null outside. */
-  const pointToPercentage = (pageX: number, pageY: number): { x: number; y: number } | null => {
-    const currentBox = boxRef.current;
-    if (!currentBox) {
-      return null;
-    }
-    const W = currentBox.width;
-    const H = currentBox.height;
-    const cx = pageX - containerOrigin.current.x;
-    const cy = pageY - containerOrigin.current.y;
-    const s = scaleRef.current;
-    const o = offsetRef.current;
-    const fit = containFit(W, H, aspectRef.current);
-    // Content top-left inside the container (centered, scaled, translated).
-    const left = (W - fit.w * s) / 2 + o.x;
-    const top = (H - fit.h * s) / 2 + o.y;
-    if (cx < left || cy < top || cx > left + fit.w * s || cy > top + fit.h * s) {
-      return null; // tapped the letterbox
-    }
-    const localX = (cx - left) / s;
-    const localY = (cy - top) / s;
-    return {
-      x: Math.min(100, Math.max(0, (localX / fit.w) * 100)),
-      y: Math.min(100, Math.max(0, (localY / fit.h) * 100)),
-    };
+  // --------------------------------------------------------------- actions
+  const startPlacing = () => {
+    const currentFit = fitRef.current;
+    setPointerAt({ x: currentFit.w / 2, y: currentFit.h / 2 });
+    setPlacing(true);
   };
 
-  /** Marker position (container coordinates) for a pin percentage. */
-  const markerPoint = (pctX: number, pctY: number): { left: number; top: number } => {
-    const W = box?.width ?? 1;
-    const H = box?.height ?? 1;
-    const s = scaleRef.current;
-    const o = offsetRef.current;
-    const fit = containFit(W, H, aspectRef.current);
-    return {
-      left: (W - fit.w * s) / 2 + o.x + (pctX / 100) * fit.w * s,
-      top: (H - fit.h * s) / 2 + o.y + (pctY / 100) * fit.h * s,
-    };
-  };
-
-  // Merge server pins with local pending pins (same id dedupe).
-  const pinsToDraw = useMemo(() => {
-    const syncedIds = new Set(serverPins.map((p) => p.id));
-    const synced: Array<{ id: string; x: number; y: number; pending: boolean; photoId: string }> =
-      serverPins.map((p) => ({
-        id: p.id,
-        x: p.xPercentage,
-        y: p.yPercentage,
-        pending: false,
-        photoId: p.photoId,
-      }));
-    const pending = localPins
-      .filter((lp) => !syncedIds.has(lp.id) && lp.syncedAt == null)
-      .map((lp) => ({
-        id: lp.id,
-        x: lp.xPercentage,
-        y: lp.yPercentage,
-        pending: true,
-        photoId: lp.photoId,
-      }));
-    return [...synced, ...pending];
-  }, [serverPins, localPins]);
-
-  const onAnchorChoice = async (photoId: string) => {
-    if (!planId || !anchorAt) {
-      return;
-    }
-    setSavingPin(true);
-    try {
-      const id = generateId();
-      await createLocalPin({
-        id,
-        planId,
-        photoId,
-        pageNumber: 1,
-        xPercentage: anchorAt.x,
-        yPercentage: anchorAt.y,
-      });
-      await enqueueSync('pin', id, {
-        planId,
-        photoId,
-        pageNumber: 1,
-        x: anchorAt.x,
-        y: anchorAt.y,
-      });
-      // Try an immediate online sync (photo may still be pending → retry later).
-      if (token && online) {
-        try {
-          await api.createPin(token, {
-            id,
-            planId,
-            photoId,
-            pageNumber: 1,
-            xPercentage: anchorAt.x,
-            yPercentage: anchorAt.y,
-          });
-          await markPinSynced(id, new Date().toISOString());
-        } catch {
-          // Queue handles it (FIFO after the photo uploads).
-        }
-      }
-      setAnchorAt(null);
-      setPickerOpen(false);
-      void loadPins();
-    } catch (err) {
-      Alert.alert('No se pudo anclar', errorMessage(err));
-    } finally {
-      setSavingPin(false);
-    }
+  const cancelPlacing = () => {
+    setPlacing(false);
+    setSelected(null);
   };
 
   const openPhotoPicker = async () => {
@@ -348,9 +560,130 @@ export default function PlanViewerScreen() {
     if (!plan?.projectId) {
       return;
     }
-    // Keep the anchor: after shooting, pick the new photo from the picker.
+    // The anchor is kept: after shooting, pick the new photo from the grid.
     router.push({ pathname: '/capture', params: { projectId: plan.projectId } });
   };
+
+  // Coming back from the camera with the picker open: refresh the photo grid so
+  // the freshly captured photo can be anchored without reopening the flow.
+  useFocusEffect(
+    useCallback(() => {
+      if (pickerOpen) {
+        void openPhotoPicker();
+      }
+    }, [pickerOpen]),
+  );
+
+  const anchorPhoto = async (photoId: string) => {
+    if (!planId) {
+      return;
+    }
+    const pct = toPercentage(pointerRef.current);
+    if (!pct) {
+      return;
+    }
+    setSavingPin(true);
+    try {
+      const id = generateId();
+      await createLocalPin({
+        id,
+        planId,
+        photoId,
+        pageNumber: 1,
+        xPercentage: pct.x,
+        yPercentage: pct.y,
+      });
+      await enqueueSync('pin', id, {
+        planId,
+        photoId,
+        pageNumber: 1,
+        x: pct.x,
+        y: pct.y,
+      });
+      if (token && online) {
+        try {
+          await api.createPin(token, {
+            id,
+            planId,
+            photoId,
+            pageNumber: 1,
+            xPercentage: pct.x,
+            yPercentage: pct.y,
+          });
+          await markPinSynced(id, new Date().toISOString());
+        } catch {
+          // The queue handles it (FIFO after the photo uploads).
+        }
+      }
+      setPickerOpen(false);
+      setPlacing(false);
+      setSelected(null);
+      void loadPins();
+    } catch (err) {
+      Alert.alert('No se pudo anclar', errorMessage(err));
+    } finally {
+      setSavingPin(false);
+    }
+  };
+
+  const detachPin = async (pin: DrawnPin) => {
+    await removeLocalPin(pin.id);
+    await enqueueSync('pin_remove', pin.id, { pinId: pin.id });
+    if (pin.pending) {
+      // Never uploaded: drop the pending create so the server sees nothing.
+      await dropQueuedEntityOps(pin.id, 'pin');
+    }
+    if (token && online && !pin.pending) {
+      try {
+        await api.removePin(token, pin.id);
+        await dropQueuedEntityOps(pin.id, 'pin_remove');
+      } catch {
+        // The queue retries (404 = already gone = success).
+      }
+    }
+    setSelected(null);
+    void loadPins();
+  };
+
+  const confirmDetach = (pin: DrawnPin) => {
+    Alert.alert(
+      'Quitar del plano',
+      'La foto se mantiene en la galería; solo se quita la marca del plano.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Quitar', style: 'destructive', onPress: () => void detachPin(pin) },
+      ],
+    );
+  };
+
+  // ----------------------------------------------------------- derived data
+  const drawnPins = useMemo<DrawnPin[]>(() => {
+    const syncedIds = new Set(serverPins.map((p) => p.id));
+    const synced: DrawnPin[] = serverPins.map((p) => ({
+      id: p.id,
+      photoId: p.photoId,
+      x: p.xPercentage,
+      y: p.yPercentage,
+      pending: false,
+      thumbnailUri: p.photo?.thumbnailUrl ?? null,
+      capturedAt: p.photo?.capturedAt ?? null,
+    }));
+    const pending: DrawnPin[] = localPins
+      .filter((lp) => !syncedIds.has(lp.id) && lp.syncedAt == null)
+      .map((lp) => ({
+        id: lp.id,
+        photoId: lp.photoId,
+        x: lp.xPercentage,
+        y: lp.yPercentage,
+        pending: true,
+        thumbnailUri: localThumbs[lp.id]?.uri ?? null,
+        capturedAt: localThumbs[lp.id]?.capturedAt ?? null,
+      }));
+    return [...synced, ...pending];
+  }, [serverPins, localPins, localThumbs]);
+
+  const pendingCount = drawnPins.filter((p) => p.pending).length;
+  const pointerPct = toPercentage(pointer);
 
   if (loading) {
     return (
@@ -360,7 +693,7 @@ export default function PlanViewerScreen() {
     );
   }
 
-  if (!plan || error) {
+  if ((!plan && !offlineImage) || (error && !imageUri)) {
     return (
       <View style={styles.full}>
         <Text style={styles.errorText}>{error ?? 'Plano no disponible.'}</Text>
@@ -375,7 +708,7 @@ export default function PlanViewerScreen() {
     );
   }
 
-  const isPdf = plan.planKind === 'PDF';
+  const isPdf = plan?.planKind === 'PDF' && !imageUri;
 
   return (
     <View style={styles.container}>
@@ -383,29 +716,33 @@ export default function PlanViewerScreen() {
       <View style={styles.topBar}>
         <Pressable
           onPress={() => router.back()}
-          style={styles.closeButton}
+          style={styles.iconButton}
           accessibilityRole="button"
           accessibilityLabel="Cerrar plano"
         >
           <Text style={styles.closeText}>✕</Text>
         </Pressable>
         <Text style={styles.topTitle} numberOfLines={1}>
-          {plan.title}
+          {plan?.title ?? 'Plano'}
         </Text>
         <Pressable
           onPress={() =>
-            router.push({
-              pathname: '/plan-photos',
-              params: { planId: plan.id, planTitle: plan.title },
-            })
+            plan
+              ? router.push({
+                  pathname: '/plan-photos',
+                  params: { planId: plan.id, planTitle: plan.title },
+                })
+              : undefined
           }
-          style={styles.photosButton}
+          style={styles.iconButton}
           accessibilityRole="button"
           accessibilityLabel="Ver fotos del plano"
         >
-          <Text style={styles.photosButtonText}>📋</Text>
+          <Text style={styles.iconGlyph}>📋</Text>
         </Pressable>
-        <Text style={styles.pinCount}>{pinsToDraw.length} 📍</Text>
+        <View style={styles.countPill}>
+          <Text style={styles.countText}>{drawnPins.length} 📍</Text>
+        </View>
       </View>
 
       {isPdf ? (
@@ -420,111 +757,271 @@ export default function PlanViewerScreen() {
           ref={containerRef}
           style={styles.imageArea}
           onLayout={(e) => {
-            const next = { width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height };
-            setBox(next);
+            setBox({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height });
             measureContainer();
           }}
           {...panResponder.panHandlers}
         >
-          {box ? (
-            <View
+          {box && imageUri ? (
+            <Animated.View
               style={[
                 styles.canvas,
-                { transform: [{ translateX: offset.x }, { translateY: offset.y }] },
+                {
+                  width: fit.w,
+                  height: fit.h,
+                  transform: [
+                    { translateX: offsetAnim.x },
+                    { translateY: offsetAnim.y },
+                    { scale: scaleAnim },
+                  ],
+                },
               ]}
             >
               <Image
-                source={{ uri: plan.fileUrl }}
-                style={{ width: box.width * scale, height: box.height * scale }}
+                source={{ uri: imageUri }}
+                style={StyleSheet.absoluteFill}
                 resizeMode="contain"
                 onLoad={(e) => {
                   const { width, height } = e.nativeEvent.source;
-                  if (width > 0 && height > 0) {
-                    aspectRef.current = width / height;
+                  if (width > 0 && height > 0 && aspectRef.current === 0) {
+                    setAspect(width / height);
+                  }
+                  setImageLoading(false);
+                }}
+                onError={() => {
+                  setImageLoading(false);
+                  if (!offlineImage) {
+                    setError('No se pudo cargar el plano. Reintenta (la URL pudo expirar).');
                   }
                 }}
-                onError={() =>
-                  setError('No se pudo cargar el plano. Reintenta (la URL pudo expirar).')
-                }
               />
-              {pinsToDraw.map((pin) => {
-                const pt = markerPoint(pin.x, pin.y);
-                return (
-                  <Pressable
+
+              {/* Pin markers (map-style: constant size while zooming) */}
+              <View style={StyleSheet.absoluteFill} pointerEvents={placing ? 'none' : 'box-none'}>
+                {drawnPins.map((pin) => (
+                  <Animated.View
                     key={pin.id}
-                    onPress={() => {
-                      if (pin.pending) {
-                        Alert.alert(
-                          'Pin pendiente',
-                          'Aún no está sincronizado: se subirá cuando haya conexión.',
-                        );
-                        return;
-                      }
-                      router.push({ pathname: '/media-viewer', params: { remoteId: pin.photoId } });
-                    }}
-                    style={[styles.pin, { left: pt.left - 14, top: pt.top - 14 }]}
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      pin.pending ? 'Pin pendiente de sincronizar' : 'Abrir foto anclada'
-                    }
+                    style={[
+                      styles.pinWrap,
+                      {
+                        left: (pin.x / 100) * fit.w - PIN_SIZE / 2,
+                        top: (pin.y / 100) * fit.h - PIN_SIZE / 2,
+                        transform: [{ scale: pinScale }],
+                      },
+                    ]}
                   >
-                    <View style={[styles.pinDot, pin.pending && styles.pinDotPending]}>
-                      {pin.pending ? <Text style={styles.pinPendingText}>⏫</Text> : null}
-                    </View>
-                  </Pressable>
-                );
-              })}
+                    <Pressable
+                      onPress={() => setSelected(pin)}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        pin.pending ? 'Pin pendiente de sincronizar' : 'Ver foto anclada'
+                      }
+                      style={[
+                        styles.pinBody,
+                        pin.pending && styles.pinBodyPending,
+                        selected?.id === pin.id && styles.pinBodySelected,
+                      ]}
+                    >
+                      {pin.pending ? <Text style={styles.pinGlyph}>⏫</Text> : null}
+                    </Pressable>
+                  </Animated.View>
+                ))}
+              </View>
+
+              {/* Placement pointer */}
+              {placing ? (
+                <Animated.View
+                  style={[
+                    styles.pointerWrap,
+                    {
+                      left: pointer.x - PIN_SIZE,
+                      top: pointer.y - PIN_SIZE,
+                      transform: [{ scale: pinScale }],
+                    },
+                  ]}
+                  pointerEvents="none"
+                >
+                  <View style={styles.pointerRing} />
+                  <View style={styles.pointerDot} />
+                </Animated.View>
+              ) : null}
+            </Animated.View>
+          ) : null}
+
+          {!imageUri || imageLoading ? (
+            <View style={styles.canvasLoader} pointerEvents="none">
+              <ActivityIndicator size="large" color="#FFFFFF" />
+              <Text style={styles.canvasLoaderText}>Cargando plano…</Text>
             </View>
-          ) : (
-            <ActivityIndicator size="large" color="#FFFFFF" />
-          )}
+          ) : null}
+
+          {/* Zoom controls */}
+          <View style={styles.zoomControls}>
+            <Pressable
+              onPress={() =>
+                zoomAround((box?.width ?? 0) / 2, (box?.height ?? 0) / 2, scaleRef.current * 1.5)
+              }
+              style={styles.zoomButton}
+              accessibilityRole="button"
+              accessibilityLabel="Acercar"
+            >
+              <Text style={styles.zoomGlyph}>＋</Text>
+            </Pressable>
+            <Pressable
+              onPress={() =>
+                zoomAround((box?.width ?? 0) / 2, (box?.height ?? 0) / 2, scaleRef.current / 1.5)
+              }
+              style={styles.zoomButton}
+              accessibilityRole="button"
+              accessibilityLabel="Alejar"
+            >
+              <Text style={styles.zoomGlyph}>－</Text>
+            </Pressable>
+            <Pressable
+              onPress={resetView}
+              style={styles.zoomButton}
+              accessibilityRole="button"
+              accessibilityLabel="Centrar plano"
+            >
+              <Text style={styles.zoomGlyph}>⤢</Text>
+            </Pressable>
+          </View>
+
+          {offlineImage ? (
+            <View style={styles.offlinePill}>
+              <Text style={styles.offlinePillText}>✈️ Plano guardado en el equipo</Text>
+            </View>
+          ) : null}
         </View>
       )}
 
-      {/* Anchor sheet */}
+      {/* Bottom bar: explicit anchoring flow */}
+      <View style={styles.bottomBar}>
+        {placing ? (
+          <>
+            <Text style={styles.placeHint}>
+              Arrastra el puntero al punto exacto, o toca el plano. Pellizca con dos dedos para
+              acercar.
+            </Text>
+            <Text style={styles.placeCoords}>
+              {pointerPct ? `x ${pointerPct.x.toFixed(1)}%  ·  y ${pointerPct.y.toFixed(1)}%` : ''}
+            </Text>
+            <View style={styles.placeActions}>
+              <Pressable
+                onPress={cancelPlacing}
+                style={[styles.placeButton, styles.placeButtonGhost]}
+                accessibilityRole="button"
+              >
+                <Text style={styles.placeButtonGhostText}>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void openPhotoPicker()}
+                disabled={photoPickerBusy}
+                style={[styles.placeButton, styles.placeButtonPrimary]}
+                accessibilityRole="button"
+              >
+                <Text style={styles.placeButtonPrimaryText}>
+                  {photoPickerBusy ? 'Abriendo…' : 'Fijar aquí'}
+                </Text>
+              </Pressable>
+            </View>
+          </>
+        ) : (
+          <>
+            <Pressable
+              onPress={startPlacing}
+              style={styles.addButton}
+              accessibilityRole="button"
+              accessibilityLabel="Añadir foto al plano"
+            >
+              <Text style={styles.addButtonGlyph}>＋</Text>
+              <Text style={styles.addButtonText}>Añadir foto al plano</Text>
+            </Pressable>
+            <Text style={styles.bottomHint}>
+              {drawnPins.length === 0
+                ? 'Aún no hay fotos ancladas en este plano.'
+                : pendingCount > 0
+                  ? `${drawnPins.length} anclada(s) · ${pendingCount} por sincronizar`
+                  : 'Toca una marca para ver la foto o quitarla del plano.'}
+            </Text>
+          </>
+        )}
+      </View>
+
+      {/* Pin preview card */}
       <Modal
-        visible={anchorAt !== null}
+        visible={selected !== null}
         transparent
         animationType="fade"
-        onRequestClose={() => setAnchorAt(null)}
+        onRequestClose={() => setSelected(null)}
       >
-        <View style={styles.sheetOverlay}>
-          <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>📍 Anclar aquí</Text>
-            <Text style={styles.sheetHint}>
-              {anchorAt ? `Posición: ${anchorAt.x.toFixed(1)}%, ${anchorAt.y.toFixed(1)}%` : ''} —
-              adjunta una foto de evidencia en este punto del plano.
-            </Text>
-            <Pressable
-              onPress={() => void openPhotoPicker()}
-              style={styles.sheetAction}
-              accessibilityRole="button"
-              disabled={photoPickerBusy || !plan}
-            >
-              <Text style={styles.sheetActionTitle}>🖼️ Usar una foto existente</Text>
-              <Text style={styles.sheetActionSub}>Elige entre las fotos de este proyecto</Text>
-            </Pressable>
-            <Pressable
-              onPress={takeNow}
-              style={styles.sheetAction}
-              accessibilityRole="button"
-              disabled={!plan}
-            >
-              <Text style={styles.sheetActionTitle}>📷 Tomar foto ahora</Text>
-              <Text style={styles.sheetActionSub}>Abre la cámara y luego elige la nueva foto</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setAnchorAt(null)}
-              style={styles.cancel}
-              accessibilityRole="button"
-            >
-              <Text style={styles.cancelText}>Cancelar</Text>
-            </Pressable>
-          </View>
-        </View>
+        <Pressable style={styles.previewOverlay} onPress={() => setSelected(null)}>
+          <Pressable style={styles.previewCard} onPress={() => undefined}>
+            {selected ? (
+              <>
+                <View style={styles.previewRow}>
+                  {selected.thumbnailUri ? (
+                    <ExpoImage
+                      source={selected.thumbnailUri}
+                      style={styles.previewThumb}
+                      contentFit="cover"
+                      transition={120}
+                    />
+                  ) : (
+                    <View style={[styles.previewThumb, styles.previewThumbEmpty]}>
+                      <Text style={styles.previewThumbGlyph}>📷</Text>
+                    </View>
+                  )}
+                  <View style={styles.previewInfo}>
+                    <Text style={styles.previewTitle}>
+                      {selected.pending ? 'Anclaje pendiente' : 'Foto anclada'}
+                    </Text>
+                    <Text style={styles.previewMeta}>
+                      {selected.capturedAt
+                        ? new Date(selected.capturedAt).toLocaleString('es-EC', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : `${selected.x.toFixed(1)}% · ${selected.y.toFixed(1)}%`}
+                    </Text>
+                    {selected.pending ? (
+                      <Text style={styles.previewPending}>Se subirá al recuperar conexión.</Text>
+                    ) : null}
+                  </View>
+                </View>
+                <View style={styles.previewActions}>
+                  <Pressable
+                    onPress={() =>
+                      router.push({
+                        pathname: '/media-viewer',
+                        params: selected.pending
+                          ? { mediaId: selected.photoId }
+                          : { remoteId: selected.photoId },
+                      })
+                    }
+                    style={[styles.previewButton, styles.previewButtonPrimary]}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.previewButtonPrimaryText}>Abrir foto</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => confirmDetach(selected)}
+                    style={[styles.previewButton, styles.previewButtonDanger]}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.previewButtonDangerText}>Quitar del plano</Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : null}
+          </Pressable>
+        </Pressable>
       </Modal>
 
-      {/* Photo picker */}
+      {/* Photo picker (after fixing the point) */}
       <Modal
         visible={pickerOpen}
         transparent
@@ -533,35 +1030,54 @@ export default function PlanViewerScreen() {
       >
         <View style={styles.sheetOverlay}>
           <View style={[styles.sheet, styles.pickerSheet]}>
-            <Text style={styles.sheetTitle}>Elegir foto del proyecto</Text>
+            <View style={styles.sheetGrabber} />
+            <Text style={styles.sheetTitle}>Elige la foto de este punto</Text>
             <Text style={styles.sheetHint}>
-              {savingPin ? 'Anclando…' : 'Selecciona la foto que corresponde a este punto.'}
+              {pointerPct
+                ? `Posición x ${pointerPct.x.toFixed(1)}% · y ${pointerPct.y.toFixed(1)}%`
+                : ''}
+              {savingPin ? ' · anclando…' : ''}
             </Text>
+            <Pressable
+              onPress={takeNow}
+              style={styles.takeButton}
+              accessibilityRole="button"
+              disabled={savingPin}
+            >
+              <Text style={styles.takeButtonGlyph}>📷</Text>
+              <View style={styles.takeButtonTextWrap}>
+                <Text style={styles.takeButtonTitle}>Tomar foto ahora</Text>
+                <Text style={styles.takeButtonSub}>Vuelve aquí y elige la foto nueva</Text>
+              </View>
+            </Pressable>
             <FlatList
               data={localMedia}
               keyExtractor={(item) => item.id}
               numColumns={3}
               renderItem={({ item }) => (
                 <Pressable
-                  onPress={() => void onAnchorChoice(item.id)}
+                  onPress={() => void anchorPhoto(item.id)}
                   disabled={savingPin}
                   style={styles.mediaTile}
                   accessibilityRole="button"
                 >
                   {item.localUri ? (
-                    <Image
-                      source={{ uri: item.localUri }}
+                    <ExpoImage
+                      source={item.localUri}
                       style={styles.mediaThumb}
-                      resizeMode="cover"
+                      contentFit="cover"
+                      recyclingKey={item.id}
                     />
                   ) : (
                     <View style={[styles.mediaThumb, styles.mediaPlaceholder]}>
                       <Text style={styles.mediaGlyph}>{item.kind === 'VIDEO' ? '▶' : '📷'}</Text>
                     </View>
                   )}
-                  <View style={styles.mediaTileStatus}>
-                    {item.kind === 'VIDEO' ? <Text style={styles.mediaTileIcon}>🎥</Text> : null}
-                  </View>
+                  {item.kind === 'VIDEO' ? (
+                    <View style={styles.mediaTileStatus}>
+                      <Text style={styles.mediaTileIcon}>🎥</Text>
+                    </View>
+                  ) : null}
                 </Pressable>
               )}
               ListEmptyComponent={
@@ -586,7 +1102,7 @@ export default function PlanViewerScreen() {
 
 const styles = StyleSheet.create({
   full: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
-  container: { flex: 1, backgroundColor: '#000' },
+  container: { flex: 1, backgroundColor: '#05070E' },
   topBar: {
     position: 'absolute',
     top: 0,
@@ -595,6 +1111,7 @@ const styles = StyleSheet.create({
     zIndex: 20,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
     paddingTop: 54,
     paddingHorizontal: 16,
     paddingBottom: 12,
@@ -605,9 +1122,9 @@ const styles = StyleSheet.create({
     fontFamily: fonts.display,
     color: '#FFFFFF',
     fontSize: 16.5,
-    marginHorizontal: 12,
+    marginHorizontal: 4,
   },
-  closeButton: {
+  iconButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -618,63 +1135,182 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   closeText: { color: '#FFFFFF', fontSize: 16 },
-  pinCount: { fontFamily: fonts.sansBold, color: colors.accent, fontSize: 12.5 },
-  photosButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  iconGlyph: { fontSize: 16 },
+  countPill: {
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     backgroundColor: 'rgba(255,255,255,0.14)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.16)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
   },
-  photosButtonText: { fontSize: 16 },
-  imageArea: { flex: 1, overflow: 'hidden' },
-  canvas: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  pin: {
-    position: 'absolute',
-    width: 30,
-    height: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pinDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#EF4444',
+  countText: { fontFamily: fonts.sansBold, color: colors.accent, fontSize: 12.5 },
+
+  imageArea: { flex: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  canvas: { alignItems: 'center', justifyContent: 'center' },
+  canvasLoader: { position: 'absolute', alignItems: 'center', gap: 10 },
+  canvasLoaderText: { fontFamily: fonts.sansMedium, color: '#D7DEEC', fontSize: 13 },
+
+  pinWrap: { position: 'absolute', width: PIN_SIZE, height: PIN_SIZE },
+  pinBody: {
+    width: PIN_SIZE,
+    height: PIN_SIZE,
+    borderRadius: PIN_SIZE / 2,
+    backgroundColor: colors.danger,
     borderWidth: 2.5,
     borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
   },
-  pinDotPending: { backgroundColor: colors.accent, borderStyle: 'dashed' },
-  pinPendingText: { fontSize: 10 },
-  errorText: {
-    fontFamily: fonts.sans,
-    color: '#E2E8F0',
-    fontSize: 15,
-    textAlign: 'center',
-    marginHorizontal: 24,
+  pinBodyPending: { backgroundColor: colors.accent },
+  pinBodySelected: { borderColor: colors.accent, borderWidth: 3.5 },
+  pinGlyph: { fontSize: 13 },
+
+  pointerWrap: {
+    position: 'absolute',
+    width: PIN_SIZE * 2,
+    height: PIN_SIZE * 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  backButton: {
-    marginTop: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: colors.primary,
+  pointerRing: {
+    position: 'absolute',
+    width: PIN_SIZE * 2,
+    height: PIN_SIZE * 2,
+    borderRadius: PIN_SIZE,
+    borderWidth: 2,
+    borderColor: colors.accent,
+    backgroundColor: 'rgba(245,158,11,0.16)',
+  },
+  pointerDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: colors.accent,
+    borderWidth: 2.5,
+    borderColor: '#FFFFFF',
+  },
+
+  zoomControls: { position: 'absolute', right: 14, bottom: 22, gap: 8 },
+  zoomButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(8,12,24,0.62)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomGlyph: { color: '#FFFFFF', fontSize: 19, fontFamily: fonts.sansMedium },
+  offlinePill: {
+    position: 'absolute',
+    top: 108,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(8,12,24,0.7)',
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  offlinePillText: { fontFamily: fonts.sansSemiBold, color: colors.accent, fontSize: 11.5 },
+
+  bottomBar: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 28,
+    backgroundColor: 'rgba(8,12,24,0.92)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 52,
     borderRadius: radius.md,
+    backgroundColor: colors.primary,
   },
-  backText: { fontFamily: fonts.sansBold, color: '#FFFFFF' },
-  pdfHint: {
+  addButtonGlyph: { color: '#FFFFFF', fontSize: 20, fontFamily: fonts.sansMedium, marginTop: -2 },
+  addButtonText: { fontFamily: fonts.sansBold, color: '#FFFFFF', fontSize: 15.5 },
+  bottomHint: {
     fontFamily: fonts.sans,
-    color: '#E2E8F0',
-    fontSize: 15,
+    color: '#94A3B8',
+    fontSize: 12.5,
     textAlign: 'center',
-    lineHeight: 22,
-    marginHorizontal: 28,
+    marginTop: 8,
   },
+  placeHint: { fontFamily: fonts.sans, color: '#D7DEEC', fontSize: 12.5, lineHeight: 18 },
+  placeCoords: {
+    fontFamily: fonts.displayMedium,
+    color: colors.accent,
+    fontSize: 13,
+    marginTop: 6,
+  },
+  placeActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  placeButton: {
+    flex: 1,
+    height: 50,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeButtonGhost: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  placeButtonGhostText: { fontFamily: fonts.sansBold, color: '#E2E8F0', fontSize: 14.5 },
+  placeButtonPrimary: { backgroundColor: colors.accent },
+  placeButtonPrimaryText: { fontFamily: fonts.sansBold, color: '#1F1300', fontSize: 15 },
+
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(4,8,18,0.6)',
+    justifyContent: 'flex-end',
+    padding: 16,
+    paddingBottom: 30,
+  },
+  previewCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: 16,
+    gap: 14,
+  },
+  previewRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  previewThumb: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceAlt,
+  },
+  previewThumbEmpty: { alignItems: 'center', justifyContent: 'center' },
+  previewThumbGlyph: { fontSize: 22 },
+  previewInfo: { flex: 1, gap: 3 },
+  previewTitle: { fontFamily: fonts.display, fontSize: 16, color: colors.ink },
+  previewMeta: { fontFamily: fonts.sans, fontSize: 12.5, color: colors.textMuted },
+  previewPending: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.accentInk },
+  previewActions: { flexDirection: 'row', gap: 10 },
+  previewButton: {
+    flex: 1,
+    height: 46,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewButtonPrimary: { backgroundColor: colors.primary },
+  previewButtonPrimaryText: { fontFamily: fonts.sansBold, color: '#FFFFFF', fontSize: 14.5 },
+  previewButtonDanger: {
+    backgroundColor: colors.dangerSoft,
+    borderWidth: 1,
+    borderColor: colors.dangerBorder,
+  },
+  previewButtonDangerText: { fontFamily: fonts.sansBold, color: colors.danger, fontSize: 14.5 },
+
   sheetOverlay: { flex: 1, backgroundColor: 'rgba(4,8,18,0.6)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.bg,
@@ -683,7 +1319,15 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 34,
   },
-  pickerSheet: { height: '72%' },
+  pickerSheet: { height: '78%' },
+  sheetGrabber: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.lineStrong,
+    marginBottom: 14,
+  },
   sheetTitle: { fontFamily: fonts.display, fontSize: 20, color: colors.ink },
   sheetHint: {
     fontFamily: fonts.sans,
@@ -692,18 +1336,22 @@ const styles = StyleSheet.create({
     marginTop: 6,
     lineHeight: 19,
   },
-  sheetAction: {
-    marginTop: 12,
+  takeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 14,
+    marginBottom: 6,
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: colors.line,
-    padding: 16,
+    borderColor: colors.primaryBorder,
+    padding: 14,
   },
-  sheetActionTitle: { fontFamily: fonts.display, fontSize: 16, color: colors.ink },
-  sheetActionSub: { fontFamily: fonts.sans, fontSize: 12.5, color: colors.textMuted, marginTop: 3 },
-  cancel: { alignItems: 'center', marginTop: 14 },
-  cancelText: { fontFamily: fonts.sansSemiBold, color: colors.textMuted, fontSize: 14 },
+  takeButtonGlyph: { fontSize: 22 },
+  takeButtonTextWrap: { flex: 1 },
+  takeButtonTitle: { fontFamily: fonts.display, fontSize: 15.5, color: colors.ink },
+  takeButtonSub: { fontFamily: fonts.sans, fontSize: 12, color: colors.textMuted, marginTop: 2 },
   mediaTile: { flex: 1 / 3, aspectRatio: 1, padding: 3 },
   mediaThumb: { width: '100%', height: '100%', borderRadius: 10 },
   mediaPlaceholder: { backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
@@ -716,5 +1364,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     paddingTop: 24,
+  },
+  cancel: { alignItems: 'center', marginTop: 14 },
+  cancelText: { fontFamily: fonts.sansSemiBold, color: colors.textMuted, fontSize: 14 },
+  backButton: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+  },
+  backText: { fontFamily: fonts.sansBold, color: '#FFFFFF' },
+  errorText: {
+    fontFamily: fonts.sans,
+    color: '#E2E8F0',
+    fontSize: 15,
+    textAlign: 'center',
+    marginHorizontal: 24,
+  },
+  pdfHint: {
+    fontFamily: fonts.sans,
+    color: '#E2E8F0',
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginHorizontal: 28,
   },
 });

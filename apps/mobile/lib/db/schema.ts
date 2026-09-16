@@ -37,6 +37,8 @@ export const photoPins = sqliteTable('photo_pins', {
   yPercentage: real('y_percentage').notNull(),
   createdAt: text('created_at').notNull(),
   syncedAt: text('synced_at'),
+  /** Soft-remove: set when the anchor is detached (the photo is kept). */
+  removedAt: text('removed_at'),
 });
 
 export const photoComments = sqliteTable('photo_comments', {

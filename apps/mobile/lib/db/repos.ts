@@ -5,6 +5,7 @@ import {
   photoComments,
   photoPins,
   photos,
+  projectPlans,
   remotePhotos,
   syncQueue,
 } from './schema';
@@ -83,7 +84,7 @@ export async function updateLocalPhotoNotes(id: string, notes: string | null): P
 /* Sync queue                                                          */
 /* ------------------------------------------------------------------ */
 
-export type QueueableEntityType = 'photo' | 'pin' | 'comment' | 'plan';
+export type QueueableEntityType = 'photo' | 'pin' | 'pin_remove' | 'comment' | 'plan';
 export interface SyncQueueItem {
   id: string;
   entityType: QueueableEntityType;
@@ -214,6 +215,25 @@ export async function dropSyncItem(queueId: string): Promise<void> {
 }
 
 /**
+ * Drops every pending operation of one entity (optionally of a single type).
+ * Used when an offline action is undone before syncing: detaching a pin that
+ * was created offline cancels its pending create instead of creating it and
+ * removing it on the server.
+ */
+export async function dropQueuedEntityOps(
+  entityId: string,
+  entityType?: QueueableEntityType,
+): Promise<void> {
+  await db
+    .delete(syncQueue)
+    .where(
+      entityType
+        ? and(eq(syncQueue.entityId, entityId), eq(syncQueue.entityType, entityType))
+        : eq(syncQueue.entityId, entityId),
+    );
+}
+
+/**
  * Resets items stuck in UPLOADING (e.g. the app was killed mid-upload) back
  * to PENDING so they are retried on the next run.
  */
@@ -249,6 +269,8 @@ export interface LocalPin {
   yPercentage: number;
   createdAt: string;
   syncedAt: string | null;
+  /** Set when the anchor was detached (soft-remove; the photo is kept). */
+  removedAt?: string | null;
 }
 
 /** Persists a pin locally first — always succeeds, even offline. */
@@ -267,18 +289,79 @@ export async function getLocalPin(id: string): Promise<LocalPin | null> {
   return (rows[0] as unknown as LocalPin | undefined) ?? null;
 }
 
-/** Pins anchored on a plan (synced + pending), oldest first. */
+/** Pins anchored on a plan (synced + pending), oldest first. Detached ones are hidden. */
 export async function listLocalPins(planId: string): Promise<LocalPin[]> {
   const rows = await db
     .select()
     .from(photoPins)
-    .where(eq(photoPins.planId, planId))
+    .where(and(eq(photoPins.planId, planId), isNull(photoPins.removedAt)))
     .orderBy(asc(photoPins.createdAt));
   return rows as unknown as LocalPin[];
 }
 
 export async function markPinSynced(id: string, syncedAt: string): Promise<void> {
   await db.update(photoPins).set({ syncedAt }).where(eq(photoPins.id, id));
+}
+
+/**
+ * Detaches a pin locally (soft-remove). The evidence photo stays untouched and
+ * the pin disappears from the plan immediately, even offline; the queued
+ * `pin_remove` entry syncs the change when there is connectivity.
+ */
+export async function removeLocalPin(id: string): Promise<void> {
+  await db
+    .update(photoPins)
+    .set({ removedAt: new Date().toISOString() })
+    .where(eq(photoPins.id, id));
+}
+
+/* ------------------------------------------------------------------ */
+/* Plans (offline cache, F3.2/F4.3)                                    */
+/* ------------------------------------------------------------------ */
+
+export interface LocalPlan {
+  id: string;
+  projectId: string;
+  title: string;
+  /** Local copy of the plan image (downloaded) — enables offline viewing. */
+  localUri: string | null;
+  remoteUrl: string | null;
+  thumbnailUrl: string | null;
+  pageCount: number;
+  planKind: 'IMAGE' | 'PDF';
+  createdAt: string;
+  syncedAt: string | null;
+}
+
+/** Upserts a plan mirror. `localUri` is preserved when the input omits it. */
+export async function upsertCachedPlan(plan: LocalPlan): Promise<void> {
+  const existing = await getCachedPlan(plan.id);
+  const localUri = plan.localUri ?? existing?.localUri ?? null;
+  const values = { ...plan, localUri };
+  await db
+    .insert(projectPlans)
+    .values(values)
+    .onConflictDoUpdate({ target: projectPlans.id, set: values });
+}
+
+export async function getCachedPlan(id: string): Promise<LocalPlan | null> {
+  const rows = await db.select().from(projectPlans).where(eq(projectPlans.id, id)).limit(1);
+  return (rows[0] as unknown as LocalPlan | undefined) ?? null;
+}
+
+/** Cached plans of a project (offline fallback for the plans list). */
+export async function listCachedPlans(projectId: string): Promise<LocalPlan[]> {
+  const rows = await db
+    .select()
+    .from(projectPlans)
+    .where(eq(projectPlans.projectId, projectId))
+    .orderBy(desc(projectPlans.createdAt));
+  return rows as unknown as LocalPlan[];
+}
+
+/** Stores the on-disk copy of a plan image. */
+export async function setPlanLocalUri(id: string, localUri: string): Promise<void> {
+  await db.update(projectPlans).set({ localUri }).where(eq(projectPlans.id, id));
 }
 
 /* ------------------------------------------------------------------ */
