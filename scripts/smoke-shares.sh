@@ -47,7 +47,7 @@ code() { # code <method> <path> [token] [body]
 }
 
 html() { # html <path> — fetches as a browser would (Accept: text/html)
-  curl -s -o /tmp/f41-body.html -w '%{http_code}' "$API$1" \
+  curl -s -o /tmp/f41-body.html -D /tmp/f41-body.headers -w '%{http_code}' "$API$1" \
     -H 'Accept: text/html,application/xhtml+xml'
 }
 
@@ -97,6 +97,16 @@ check "unknown photo html 404" "404" "$(html "/s/$TOKEN/p/00000000-0000-4000-800
 contains "error page copy" "Enlace no encontrado" /tmp/f41-body.html
 check "media proxy 404" "404" "$(code GET "/s/$TOKEN/media/00000000-0000-4000-8000-000000000000")"
 check "media proxy needs valid token" "404" "$(code GET "/s/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/media/00000000-0000-4000-8000-000000000000")"
+
+# The public pages must not send `upgrade-insecure-requests`: on a plain-HTTP
+# deployment the browser would rewrite the media URLs to HTTPS and every image
+# would fail (Helmet adds that directive by default). These assertions reuse the
+# headers of the HTML fetch above, so they do not add access-count hits.
+PAGE_CSP=$(tr -d '\r' < /tmp/f41-body.headers | grep -i '^content-security-policy:' | tr ';' '\n')
+check "page CSP has no upgrade-insecure-requests" "0" "$(echo "$PAGE_CSP" | grep -ci 'upgrade-insecure-requests')"
+check "page CSP allows same-origin images" "1" "$(echo "$PAGE_CSP" | grep -ci "img-src 'self'")"
+check "global CSP has no upgrade-insecure-requests" "0" \
+  "$(curl -s -D - -o /dev/null "$API/health" | tr -d '\r' | grep -ci 'upgrade-insecure-requests')"
 
 echo "== 4. TECHNICIAN is forbidden =="
 check "create 403" "403" "$(code POST /shares "$TOKEN_T" "{\"projectId\":\"$PROJECT_ID\"}")"
