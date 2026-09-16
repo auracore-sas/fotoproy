@@ -17,7 +17,7 @@ FotoProy es una plataforma móvil (iOS + Android) para **capturar, almacenar, or
 | 💻 Código         | ✅ **F1 (M1)** · ✅ **F2 (M2)** · ✅ **F3 (M3)** · 🚧 **F4 en curso** — F4.1 enlaces de solo lectura ✅, F4.2 vista web ✅ (pendiente validar el enlace en el navegador del teléfono), F4.3 pulido UX/offline ✅ y F4.3.1 rediseño visual ✅; siguen F4.4–F4.7 |
 
 > [!NOTE]
-> Proyecto en desarrollo — Fases 0–3 completas (M0–M3) y Fase 4 en curso (F4.1 + F4.2 listos; pendiente la validación del enlace en el teléfono; F4.3 pulido UX/offline y F4.3.1 rediseño visual completados). Quedan F4.4–F4.7, el despliegue F2.4 y el visor PDF opcional. El estado por fases vive en el [ROADMAP](ROADMAP.md).
+> Proyecto en desarrollo — Fases 0–3 completas (M0–M3) y Fase 4 en curso: F4.1 enlaces de solo lectura y F4.2 vista web **validados en dispositivo (2026-09-16)**, F4.3 pulido UX/offline ✅ y F4.3.1 rediseño visual ✅. Quedan la mejora de usabilidad de planos/mapas, F4.4–F4.7, el despliegue F2.4 (crítico: sin dominio/R2 los enlaces solo funcionan en la LAN) y el visor PDF opcional. El estado por fases vive en el [ROADMAP](ROADMAP.md).
 
 ---
 
