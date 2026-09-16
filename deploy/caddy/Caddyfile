@@ -1,0 +1,19 @@
+# FotoProy — public entrypoint.
+#
+# Caddy terminates TLS (Let's Encrypt certificate, renewed automatically) and
+# forwards everything to the API container. The API itself listens on plain
+# HTTP inside the Docker network.
+#
+# DOMAIN and ACME_EMAIL come from the environment (docker-compose.prod.yml).
+
+{
+	email {$ACME_EMAIL:admin@example.com}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Pre-signed uploads go straight from the app to R2, so this is only the
+	# JSON API + the public share pages + the streaming media proxy.
+	reverse_proxy api:4100
+}

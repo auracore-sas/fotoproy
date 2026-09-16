@@ -18,6 +18,7 @@
     "dev:mobile": "pnpm --filter @fotoproy/mobile start",
     "dev:up": "bash scripts/dev-up.sh",
     "dev:stop": "bash scripts/dev-stop.sh",
+    "deploy:prod": "bash scripts/deploy.sh",
     "smoke:shares": "bash scripts/smoke-shares.sh",
     "smoke:pins": "bash scripts/smoke-pins.sh",
     "photo:download": "node --env-file=apps/api/.env apps/api/scripts/download-photo.mjs",

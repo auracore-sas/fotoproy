@@ -1,0 +1,23 @@
+# Keep the Docker build context small and free of secrets.
+# .env files are NEVER copied into the image (compose injects them at runtime).
+
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+
+.git
+.gitignore
+.expo
+**/.expo
+
+.env
+.env.*
+**/.env
+**/.env.*
+
+*.log
+
+docs
+ROADMAP.md
+AGENTS.md
+README.md
