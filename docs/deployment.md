@@ -113,7 +113,9 @@ PUBLIC_BASE_URL=https://fotoproy.apx5.com
 CORS_ORIGIN=https://fotoproy.apx5.com
 
 # MinIO: interno para la API, público (API S3) para firmar las URLs del teléfono
-STORAGE_ENDPOINT=http://minio:9000
+# STORAGE_ENDPOINT ya está fijado en docker-compose.dokploy.yml
+# (http://minio:9000, alias sin guion bajo). Cámbialo en ese archivo si tu
+# alias de MinIO es distinto.
 STORAGE_PUBLIC_ENDPOINT=https://minio-api.apx5.com
 STORAGE_REGION=us-east-1
 STORAGE_ACCESS_KEY_ID=<minio-access-key>
@@ -130,6 +132,17 @@ RUN_MIGRATIONS_ON_START=true
 
 Tras cambiar variables hay que **redesplegar**: Dokploy no las lee en caliente.
 
+> **Cómo llegan las variables al contenedor.** Dokploy escribe la pestaña
+> _Environment_ en un `.env` que solo se usa para **interpolar** los `${...}` de
+> `docker-compose.dokploy.yml` (`docker compose --env-file` no inyecta nada por
+> sí mismo). Todo lo que la API necesita está mapeado explícitamente bajo
+> `environment:` en ese archivo, así que ese compose es la fuente de verdad de
+> qué recibe el contenedor. Para comprobar el valor real dentro del contenedor:
+>
+> ```bash
+> docker exec fotoproy-api printenv STORAGE_ENDPOINT
+> ```
+
 ### 3.3 MinIO (el stack que ya tienes)
 
 Tu compose de MinIO publica dos hosts de Traefik: la **consola** en
@@ -142,7 +155,7 @@ Tu compose de MinIO publica dos hosts de Traefik: la **consola** en
 
 | Rol                 | Valor                                                | Por qué                                                                                                                                  |
 | ------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| API → MinIO         | `STORAGE_ENDPOINT=http://minio:9000`                 | Tráfico interno por la red de Docker. **Alias sin guion bajo**: MinIO rechaza los `Host` inválidos.                                      |
+| API → MinIO         | `STORAGE_ENDPOINT=http://minio:9000`                 | Tráfico interno por la red de Docker (fijado en el compose). **Alias sin guion bajo**: MinIO rechaza los `Host` inválidos.               |
 | Teléfono → MinIO    | `STORAGE_PUBLIC_ENDPOINT=https://minio-api.apx5.com` | El **API S3**, no la consola: una pre-signed URL solo vale para el host con el que se firmó y este es el que el teléfono puede alcanzar. |
 | Consola (navegador) | `https://minio.apx5.com`                             | Solo para administrar el MinIO; no se usa en la configuración de la API.                                                                 |
 

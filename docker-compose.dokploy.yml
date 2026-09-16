@@ -9,7 +9,11 @@
 # Usage (Dokploy → project → Create Compose):
 #   1. Provider: Git (or GitHub App) → repository auracore-sas/fotoproy, branch main.
 #   2. Compose Path: ./docker-compose.dokploy.yml
-#   3. Environment: add the variables listed in docs/deployment.md §3.2.
+#   3. Environment: add the variables listed in docs/deployment.md §3.2. Dokploy
+#      writes them into a .env that `docker compose --env-file` only uses to
+#      interpolate the ${...} placeholders below; it does not inject them into
+#      the container by itself, which is why every value the API needs is
+#      mapped explicitly under `environment:`.
 #   4. Do NOT add a Domain in the Dokploy UI: the Traefik labels below already
 #      route fotoproy.apx5.com to this container (same style as the MinIO stack).
 #
@@ -34,7 +38,14 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
       CORS_ORIGIN: ${CORS_ORIGIN}
-      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT}
+      # Internal MinIO endpoint, fixed here on purpose. The alias must NOT
+      # contain underscores: MinIO validates the Host header and answers
+      # "400 InvalidRequest (invalid hostname)" for names like `minio_storage`,
+      # even though Docker resolves them. Keeping it in this file (instead of
+      # the Dokploy Environment tab, whose .env is only used for ${...}
+      # interpolation) makes the deploy deterministic. Change it here if your
+      # MinIO alias is different.
+      STORAGE_ENDPOINT: http://minio:9000
       STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT}
       STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
       STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID}
