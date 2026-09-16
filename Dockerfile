@@ -79,11 +79,15 @@ WORKDIR /app
 # (Prisma migrations) can run inside this same image.
 COPY --from=build --chown=node:node /app /app
 
+# Optional migration-on-start wrapper (RUN_MIGRATIONS_ON_START=true).
+COPY --chown=node:node scripts/docker-entrypoint.sh /usr/local/bin/fotoproy-entrypoint
+RUN chmod +x /usr/local/bin/fotoproy-entrypoint
+
 USER node
 EXPOSE 4100
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4100)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-ENTRYPOINT ["dumb-init", "--"]
+ENTRYPOINT ["dumb-init", "--", "/usr/local/bin/fotoproy-entrypoint"]
 CMD ["node", "apps/api/dist/main.js"]

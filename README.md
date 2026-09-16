@@ -114,13 +114,14 @@ Comandos útiles: `pnpm dev:stop` · `pnpm build` · `pnpm lint` · `pnpm format
 
 ## Producción (F2.4)
 
-La API se despliega como contenedor Docker con Caddy delante (TLS automático) y Cloudflare R2 para los archivos. La infraestructura vive en el repo; el despliegue lo ejecuta `scripts/deploy.sh`.
+La API se despliega como contenedor Docker (Dokploy en el servidor propio, o Caddy en un VPS desnudo) con Cloudflare R2 para los archivos. La infraestructura vive en el repo; las migraciones se aplican al arrancar con `RUN_MIGRATIONS_ON_START=true`.
 
 ```bash
-bash scripts/deploy.sh --selfhosted-db   # build + migraciones + arranque + health check
+git push origin main                     # Dokploy reconstruye y despliega
+bash scripts/deploy.sh --selfhosted-db   # VPS desnudo: build + migraciones + arranque
 ```
 
-Runbook completo (dominio, R2, backups, rollback y lo que falta): [docs/deployment.md](docs/deployment.md).
+Runbook completo (Dokploy paso a paso, dominio, R2, backups, rollback y lo que falta): [docs/deployment.md](docs/deployment.md).
 
 ---
 

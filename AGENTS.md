@@ -115,13 +115,19 @@ pnpm db:down              # detener BD docker
 
 ### Producción (F2.4)
 
+Vía elegida: **Dokploy** en servidor propio (opción A del runbook: construye el `Dockerfile`, Traefik resuelve dominio + TLS, PostgreSQL existente del panel y migraciones con `RUN_MIGRATIONS_ON_START=true`). Los comandos con Compose son para un VPS desnudo sin Dokploy.
+
 ```bash
-bash scripts/deploy.sh              # build + migraciones + arranque + health check
+bash scripts/deploy.sh              # VPS desnudo: build + migraciones + arranque + health check
 bash scripts/deploy.sh --selfhosted-db   # además levanta PostgreSQL en el propio host
 docker compose -f docker-compose.prod.yml logs -f api
 ```
 
-Runbook completo (servidor, DNS, R2, backups, rollback): [docs/deployment.md](docs/deployment.md).
+Runbook completo (Dokploy paso a paso, DNS, R2, backups, rollback): [docs/deployment.md](docs/deployment.md).
+
+### Repositorio remoto
+
+`git@github.com:auracore-sas/fotoproy.git`, rama `main` (autodeploy en Dokploy). En esta máquina el remoto usa el alias SSH **`github.com-auracore-sas`** (`~/.ssh/auracore-sas-pvalarezo`) porque la clave por defecto de la máquina pertenece a otra cuenta de GitHub. Un `git push` directo a `github.com` falla con _Permission denied_.
 
 ### Añadir dependencias (siempre dentro del paquete correcto)
 
