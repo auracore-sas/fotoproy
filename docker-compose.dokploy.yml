@@ -43,8 +43,12 @@ services:
       # "400 InvalidRequest (invalid hostname)" for names like `minio_storage`,
       # even though Docker resolves them. Keeping it in this file (instead of
       # the Dokploy Environment tab, whose .env is only used for ${...}
-      # interpolation) makes the deploy deterministic. Change it here if your
-      # MinIO alias is different.
+      # interpolation) makes the deploy deterministic.
+      #
+      # If the Docker alias cannot be used, set the public S3 endpoint instead
+      # (works through Traefik; only the server-side reads/writes of photos and
+      # thumbnails take the extra hop, never the phone uploads):
+      #   STORAGE_ENDPOINT: https://minio-api.apx5.com
       STORAGE_ENDPOINT: http://minio:9000
       STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT}
       STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
